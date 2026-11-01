@@ -293,7 +293,7 @@ OptionEntryFlags OptionEntryBase::GetFlags() const
 }
 void OptionEntryBase::SetValueChangedCallback(tl::function_ref<void()> callback)
 {
-	callback_ = callback;
+	callback_.emplace(callback);
 }
 void OptionEntryBase::NotifyValueChanged()
 {

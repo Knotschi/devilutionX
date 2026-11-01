@@ -39,6 +39,7 @@ set(tests
   math_test
   missiles_test
   multi_logging_test
+  options_test
   pack_test
   player_test
   quests_test
