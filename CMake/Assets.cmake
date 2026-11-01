@@ -164,6 +164,8 @@ set(devilutionx_assets
   lua/inspect.lua
   lua/mods/adria_refills_mana/init.lua
   lua/mods/clock/init.lua
+  lua/mods/weapon_swap/init.lua
+  lua/mods/weapon_swap/logic.lua
   "lua/mods/Floating Numbers - Damage/init.lua"
   "lua/mods/Floating Numbers - XP/init.lua"
   lua/repl_prelude.lua
