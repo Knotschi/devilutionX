@@ -1,7 +1,11 @@
 #include "lua/modules/player.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <optional>
+#include <string_view>
+#include <tuple>
+#include <vector>
 
 #include <sol/sol.hpp>
 
@@ -53,6 +57,95 @@ Player *ToPlayer(const sol::object &self)
 const Item *ToItem(const sol::object &value)
 {
 	return value.is<Item>() ? value.as<const Item *>() : nullptr;
+}
+
+/**
+ * @brief Reads `{ body = location }` or `{ cell = cell }`.
+ *
+ * Fields of moves are read raw here and below, so metamethods can't run code or raise an error in the middle of this.
+ */
+std::optional<ItemLocation> ToItemLocation(const sol::object &value)
+{
+	if (value.get_type() != sol::type::table)
+		return std::nullopt;
+
+	const auto table = value.as<sol::table>();
+	const auto body = table.raw_get<sol::object>("body");
+	const auto cell = table.raw_get<sol::object>("cell");
+	if (body.valid() && cell.valid())
+		return std::nullopt;
+
+	const std::optional<int> index = body.valid() ? ToIndex(body, NUM_INVLOC) : ToIndex(cell, InventoryGridCells);
+	if (!index.has_value())
+		return std::nullopt;
+	return ItemLocation { body.valid() ? ItemLocation::Kind::Body : ItemLocation::Kind::Cell, *index };
+}
+
+std::optional<ItemMove> ToItemMove(const sol::object &value)
+{
+	if (value.get_type() != sol::type::table)
+		return std::nullopt;
+
+	const auto table = value.as<sol::table>();
+	const std::optional<ItemLocation> from = ToItemLocation(table.raw_get<sol::object>("from"));
+	const std::optional<ItemLocation> to = ToItemLocation(table.raw_get<sol::object>("to"));
+	if (!from.has_value() || !to.has_value())
+		return std::nullopt;
+	return ItemMove { *from, *to };
+}
+
+/**
+ * @brief Reads a list of moves. Every entry of the table has to be part of the list.
+ *
+ * The table is walked rather than read up to its length, as a gap would otherwise drop the moves after it, and only some of the moves would happen.
+ */
+std::optional<std::vector<ItemMove>> ToItemMoves(const sol::object &value)
+{
+	if (value.get_type() != sol::type::table)
+		return std::nullopt;
+
+	std::vector<ItemMove> moves(MaxItemMoves);
+	bool valid = true;
+	int count = 0;
+	int lastIndex = 0;
+	value.as<sol::table>().for_each([&](const sol::object &key, const sol::object &entry) {
+		count++;
+		const std::optional<int> index = ToIndex(key, static_cast<int>(MaxItemMoves) + 1);
+		const std::optional<ItemMove> move = ToItemMove(entry);
+		if (!index.has_value() || *index == 0 || !move.has_value()) {
+			valid = false;
+			return;
+		}
+		moves[*index - 1] = *move;
+		lastIndex = std::max(lastIndex, *index);
+	});
+
+	if (!valid || lastIndex != count)
+		return std::nullopt;
+	moves.resize(count);
+	return moves;
+}
+
+using MoveItemsResult = std::tuple<bool, std::optional<std::string_view>>;
+
+MoveItemsResult ToMoveItemsResult(std::optional<MoveItemsError> error)
+{
+	if (!error.has_value())
+		return { true, std::nullopt };
+
+	switch (*error) {
+	case MoveItemsError::Busy:
+		return { false, "busy" };
+	case MoveItemsError::Missing:
+		return { false, "missing" };
+	case MoveItemsError::NoRoom:
+		return { false, "noroom" };
+	case MoveItemsError::CannotEquip:
+		return { false, "cannotequip" };
+	case MoveItemsError::Invalid:
+		break;
+	}
+	return { false, "invalid" };
 }
 
 void InitPlayerUserType(sol::state_view &lua)
@@ -203,6 +296,14 @@ void InitPlayerUserType(sol::state_view &lua)
 		    const Item *itemPointer = ToItem(item);
 		    return player != nullptr && itemPointer != nullptr && player->CanUseItem(*itemPointer);
 	    });
+	LuaSetDocFn(playerType, "canWieldTogether", "(a: Item, b: Item) -> boolean",
+	    "Whether this player's class can hold both items at once. Ignores what is in hand and the items' requirements.",
+	    [](const sol::object &self, const sol::object &a, const sol::object &b) -> bool {
+		    const Player *player = ToPlayer(self);
+		    const Item *itemA = ToItem(a);
+		    const Item *itemB = ToItem(b);
+		    return player != nullptr && itemA != nullptr && itemB != nullptr && CanWieldTogether(*player, *itemA, *itemB);
+	    });
 	LuaSetDocFn(playerType, "setInventoryCellReserved", "(cell: integer, reserved: boolean)",
 	    "Reserve an inventory cell: automatic placement won't use it and sorting won't move items touching it. Placing items by hand is unaffected. Lasts until the hero is loaded again. Does nothing given a bad cell, or anything but a boolean.",
 	    [](const sol::object &self, const sol::object &cell, const sol::object &reserved) {
@@ -218,6 +319,27 @@ void InitPlayerUserType(sol::state_view &lua)
 		    const Player *player = ToPlayer(self);
 		    const std::optional<int> index = ToIndex(cell, InventoryGridCells);
 		    return player != nullptr && index.has_value() && player->reservedInvCells.test(*index);
+	    });
+	LuaSetDocFn(playerType, "canMoveItems", "(moves: { from: { body: InvBodyLoc }|{ cell: integer }, to: { body: InvBodyLoc }|{ cell: integer } }[]) -> ok: boolean, reason: string|nil",
+	    "Whether moveItems would succeed with these moves, changing nothing. Reason is as in moveItems.",
+	    [](const sol::object &self, const sol::object &moves) -> MoveItemsResult {
+		    const Player *player = ToPlayer(self);
+		    const std::optional<std::vector<ItemMove>> itemMoves = ToItemMoves(moves);
+		    if (player == nullptr || !itemMoves.has_value())
+			    return ToMoveItemsResult(MoveItemsError::Invalid);
+		    return ToMoveItemsResult(CheckMoveItems(*player, *itemMoves));
+	    });
+	LuaSetDocFn(playerType, "moveItems", "(moves: { from: { body: InvBodyLoc }|{ cell: integer }, to: { body: InvBodyLoc }|{ cell: integer } }[]) -> ok: boolean, reason: string|nil",
+	    "Move up to 16 items between body slots and inventory cells, all or none, seen by other players too. "
+	    "A `from` cell is any cell of the item, a `to` cell its new top-left cell, and a target may overlap the source of another move. Reserved cells can be used. "
+	    "Reason on failure: \"busy\" (not the local player, no game running, a store is open, or a body slot is involved while attacking or casting), \"invalid\" (a malformed list), "
+	    "\"missing\" (a source is empty), \"noroom\" (a target is taken or out of bounds) or \"cannotequip\". Item references are invalid afterwards.",
+	    [](const sol::object &self, const sol::object &moves) -> MoveItemsResult {
+		    Player *player = ToPlayer(self);
+		    const std::optional<std::vector<ItemMove>> itemMoves = ToItemMoves(moves);
+		    if (player == nullptr || !itemMoves.has_value())
+			    return ToMoveItemsResult(MoveItemsError::Invalid);
+		    return ToMoveItemsResult(MoveItems(*player, *itemMoves));
 	    });
 	LuaSetDocFn(playerType, "say", "(speech: HeroSpeech)",
 	    "Speak a line, unless it is already being spoken. Does nothing given anything but a HeroSpeech.",
