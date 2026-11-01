@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -1411,18 +1412,23 @@ void SmithPremiumBuyEnter()
 	StartStore(TalkID::Confirm);
 }
 
-bool StoreGoldFit(Item &item)
+/**
+ * @brief Checks if the gold from selling an item would fit in the inventory.
+ * @param idx Index into PlayerItems of the item being sold.
+ */
+bool StoreGoldFit(int idx)
 {
+	const Item &item = PlayerItems[idx];
 	const int cost = item._iIvalue;
+	const int invIndex = PlayerItemIndexes[idx];
 
-	const Size itemSize = GetInventorySize(item);
-	const int itemRoomForGold = itemSize.width * itemSize.height * MaxGold;
-
-	if (cost <= itemRoomForGold) {
-		return true;
+	if (invIndex < 0 && MyPlayer->reservedInvCells.none()) {
+		// Selling from the belt frees no grid cell. Vanilla counts its size anyway, which only bites on a really full inventory, but cells kept empty by reservation would make that the normal case.
+		const Size itemSize = GetInventorySize(item);
+		return cost <= (itemSize.width * itemSize.height * MaxGold) + RoomForGold();
 	}
 
-	return cost <= itemRoomForGold + RoomForGold();
+	return GoldFitsAfterSale(cost, invIndex);
 }
 
 /**
@@ -1467,7 +1473,7 @@ void SmithSellEnter()
 
 	const int idx = ScrollPos + ((CurrentTextLine - PreviousScrollPos) / 4);
 
-	if (!StoreGoldFit(PlayerItems[idx])) {
+	if (!StoreGoldFit(idx)) {
 		StartStore(TalkID::NoRoom);
 		return;
 	}
@@ -1636,7 +1642,7 @@ void WitchSellEnter()
 
 	const int idx = ScrollPos + ((CurrentTextLine - PreviousScrollPos) / 4);
 
-	if (!StoreGoldFit(PlayerItems[idx])) {
+	if (!StoreGoldFit(idx)) {
 		StartStore(TalkID::NoRoom);
 		return;
 	}
@@ -2861,6 +2867,25 @@ bool IsPlayerInStore()
 bool PlayerCanAfford(int price)
 {
 	return TotalPlayerGold() >= static_cast<uint32_t>(price);
+}
+
+bool GoldFitsAfterSale(int value, int invIndex)
+{
+	const Player &myPlayer = *MyPlayer;
+
+	int freedCells = 0;
+	if (invIndex >= 0) {
+		const Size itemSize = GetInventorySize(myPlayer.InvList[invIndex]);
+		freedCells = itemSize.width * itemSize.height;
+		// Gold is never placed in a reserved cell, even once the sold item has left it
+		for (int cell = 0; cell < InventoryGridCells; cell++) {
+			if (myPlayer.reservedInvCells.test(cell) && std::abs(myPlayer.InvGrid[cell]) - 1 == invIndex) {
+				freedCells--;
+			}
+		}
+	}
+
+	return value <= (freedCells * MaxGold) + RoomForGold();
 }
 
 bool SmithWillBuy(const Item &item)

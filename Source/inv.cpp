@@ -4,6 +4,8 @@
  * Implementation of player inventory.
  */
 #include <algorithm>
+#include <array>
+#include <bitset>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -669,8 +671,8 @@ bool CheckItemFitsInInventorySlot(const Player &player, int slotIndex, const Siz
 		}
 		int xx = (slotIndex > 0) ? (slotIndex % 10) : 0;
 		for (int i = 0; i < itemSize.width; i++) {
-			if (xx >= 10 || (player.InvGrid[xx + yy] != 0 && std::abs(player.InvGrid[xx + yy]) - 1 != itemIndexToIgnore)) {
-				// The item is too wide to fit in the specified column, or one of the cells is occupied (and not by the item we're planning on removing)
+			if (xx >= 10 || player.reservedInvCells.test(xx + yy) || (player.InvGrid[xx + yy] != 0 && std::abs(player.InvGrid[xx + yy]) - 1 != itemIndexToIgnore)) {
+				// The item is too wide to fit in the specified column, one of the cells is reserved, or one of the cells is occupied (and not by the item we're planning on removing)
 				return false;
 			}
 			xx++;
@@ -1109,7 +1111,7 @@ void StartGoldDrop()
 
 int CreateGoldItemInInventorySlot(Player &player, int slotIndex, int value)
 {
-	if (player.InvGrid[slotIndex] != 0) {
+	if (player.InvGrid[slotIndex] != 0 || player.reservedInvCells.test(slotIndex)) {
 		return value;
 	}
 
@@ -1477,6 +1479,10 @@ std::vector<int> SortItemsBySize(Player &player)
 
 void ReorganizeInventory(Player &player)
 {
+	// Placing items one at a time drops the scroll spells of those not placed yet, along with a readied scroll spell
+	const SpellID readiedSpell = player._pRSpell;
+	const SpellType readiedSpellType = player._pRSplType;
+
 	// Sort items by size
 	const std::vector<int> sortedIndices = SortItemsBySize(player);
 
@@ -1484,6 +1490,20 @@ void ReorganizeInventory(Player &player)
 	std::vector<Item> tempStorage(player._pNumInv);
 	std::array<int8_t, 40> originalInvGrid;                                                       // Declare an array for InvGrid copy
 	std::copy(std::begin(player.InvGrid), std::end(player.InvGrid), std::begin(originalInvGrid)); // Copy InvGrid to originalInvGrid
+
+	// Items touching a reserved cell stay where they are, everything else is sorted around them
+	std::array<int, InventoryGridCells> topLeftCells;
+	std::bitset<InventoryGridCells> pinnedItems;
+	for (int cell = InventoryGridCells - 1; cell >= 0; cell--) { // Descending so that the top left cell is written last
+		const int index = std::abs(player.InvGrid[cell]) - 1;
+		if (index < 0) {
+			continue;
+		}
+		topLeftCells[index] = cell;
+		if (player.reservedInvCells.test(cell)) {
+			pinnedItems.set(index);
+		}
+	}
 
 	// Move items to temporary storage and clear inventory slots
 	for (int i = 0; i < player._pNumInv; ++i) {
@@ -1493,9 +1513,21 @@ void ReorganizeInventory(Player &player)
 	player._pNumInv = 0;                                                // Reset inventory count
 	std::fill(std::begin(player.InvGrid), std::end(player.InvGrid), 0); // Clear InvGrid
 
+	for (const int index : sortedIndices) {
+		if (pinnedItems.test(index)) {
+			const Item &item = tempStorage[index];
+			player.InvList[player._pNumInv] = item;
+			player._pNumInv++;
+			AddItemToInvGrid(player, topLeftCells[index], player._pNumInv, GetInventorySize(item), false);
+		}
+	}
+
 	// Attempt to place items back, now from the temp storage
 	bool reorganizationFailed = false;
 	for (const int index : sortedIndices) {
+		if (pinnedItems.test(index)) {
+			continue;
+		}
 		const Item &item = tempStorage[index];
 		if (!AutoPlaceItemInInventory(player, item, false)) {
 			reorganizationFailed = true;
@@ -1505,24 +1537,31 @@ void ReorganizeInventory(Player &player)
 
 	// If reorganization failed, restore items and InvGrid from tempStorage and originalInvGrid
 	if (reorganizationFailed) {
+		player._pNumInv = 0; // Drop whatever was placed before the failure, tempStorage holds every item
 		for (const Item &item : tempStorage) {
 			if (!item.isEmpty()) {
 				player.InvList[player._pNumInv++] = item;
 			}
 		}
 		std::copy(std::begin(originalInvGrid), std::end(originalInvGrid), std::begin(player.InvGrid)); // Restore InvGrid
+		player._pRSpell = readiedSpell;
+		player._pRSplType = readiedSpellType;
+		player.CalcScrolls();
 	}
 }
 
 int RoomForGold()
 {
 	int amount = 0;
-	for (const int8_t &itemIndex : MyPlayer->InvGrid) {
+	for (int cell = 0; cell < InventoryGridCells; cell++) {
+		const int8_t itemIndex = MyPlayer->InvGrid[cell];
 		if (itemIndex < 0) {
 			continue;
 		}
 		if (itemIndex == 0) {
-			amount += MaxGold;
+			if (!MyPlayer->reservedInvCells.test(cell)) {
+				amount += MaxGold;
+			}
 			continue;
 		}
 

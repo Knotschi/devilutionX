@@ -279,6 +279,93 @@ TEST_F(LuaInventoryApiTest, CanUseItem_WrongSelf_ReturnsFalse)
 	}
 }
 
+TEST_F(LuaInventoryApiTest, SetInventoryCellReserved_AffectsAutomaticPlacement)
+{
+	for (int cell = 1; cell < InventoryGridCells; cell++)
+		PlaceAt(MakePotion(), cell);
+	const Item potion = MakePotion();
+	ASSERT_TRUE(CanFitItemInInventory(*MyPlayer, potion));
+
+	Eval(StrCat(Prelude, "p:setInventoryCellReserved(0, true)"));
+	EXPECT_FALSE(CanFitItemInInventory(*MyPlayer, potion));
+
+	Eval(StrCat(Prelude, "p:setInventoryCellReserved(0, false)"));
+	EXPECT_TRUE(CanFitItemInInventory(*MyPlayer, potion));
+}
+
+TEST_F(LuaInventoryApiTest, SetInventoryCellReserved_LastCell)
+{
+	Eval(StrCat(Prelude, "p:setInventoryCellReserved(39, true)"));
+
+	EXPECT_EQ(MyPlayer->reservedInvCells.count(), 1);
+	EXPECT_TRUE(MyPlayer->reservedInvCells.test(39));
+}
+
+TEST_F(LuaInventoryApiTest, SetInventoryCellReserved_BadCell_ChangesNothing)
+{
+	for (const char *cell : BadCells) {
+		SCOPED_TRACE(cell);
+		EXPECT_EQ(Run<bool>(StrCat("return p:setInventoryCellReserved(", cell, cell[0] == '\0' ? "" : ",", " true) == nil")), true);
+	}
+
+	EXPECT_TRUE(MyPlayer->reservedInvCells.none());
+}
+
+TEST_F(LuaInventoryApiTest, SetInventoryCellReserved_BadFlag_ChangesNothing)
+{
+	MyPlayer->reservedInvCells.set(3);
+
+	for (const char *flag : { "0", "1", "'false'", "nil", "{}", "print", "p" }) {
+		SCOPED_TRACE(flag);
+		EXPECT_EQ(Run<bool>(StrCat("return p:setInventoryCellReserved(3, ", flag, ") == nil")), true);
+		EXPECT_EQ(Run<bool>(StrCat("return p:setInventoryCellReserved(4, ", flag, ") == nil")), true);
+	}
+	EXPECT_EQ(Run<bool>("return p:setInventoryCellReserved(3) == nil"), true);
+
+	EXPECT_EQ(MyPlayer->reservedInvCells.count(), 1);
+	EXPECT_TRUE(MyPlayer->reservedInvCells.test(3));
+}
+
+TEST_F(LuaInventoryApiTest, SetInventoryCellReserved_WrongSelf_ChangesNothing)
+{
+	for (const char *self : { "0", "nil", "'p'", "{}" }) {
+		SCOPED_TRACE(self);
+		EXPECT_EQ(Run<bool>(StrCat("return p.setInventoryCellReserved(", self, ", 3, true) == nil")), true);
+	}
+
+	EXPECT_TRUE(MyPlayer->reservedInvCells.none());
+}
+
+TEST_F(LuaInventoryApiTest, IsInventoryCellReserved_ReadsTheFlag)
+{
+	MyPlayer->reservedInvCells.set(3);
+	MyPlayer->reservedInvCells.set(39);
+
+	EXPECT_EQ(Run<bool>("return p:isInventoryCellReserved(3)"), true);
+	EXPECT_EQ(Run<bool>("return p:isInventoryCellReserved(39)"), true);
+	EXPECT_EQ(Run<bool>("return p:isInventoryCellReserved(4)"), false);
+}
+
+TEST_F(LuaInventoryApiTest, IsInventoryCellReserved_BadCell_ReturnsFalse)
+{
+	MyPlayer->reservedInvCells.set();
+
+	for (const char *cell : BadCells) {
+		SCOPED_TRACE(cell);
+		EXPECT_EQ(Run<bool>(StrCat("return p:isInventoryCellReserved(", cell, ")")), false);
+	}
+}
+
+TEST_F(LuaInventoryApiTest, IsInventoryCellReserved_WrongSelf_ReturnsFalse)
+{
+	MyPlayer->reservedInvCells.set();
+
+	for (const char *args : WrongSelves) {
+		SCOPED_TRACE(args);
+		EXPECT_EQ(Run<bool>(StrCat("return p.isInventoryCellReserved(", args, ")")), false);
+	}
+}
+
 TEST_F(LuaInventoryApiTest, InventorySize_IsExposed)
 {
 	EXPECT_EQ(Run<int>("return player.InventoryColumns"), 10);
@@ -402,7 +489,7 @@ TEST_F(LuaInventoryApiTest, ItemSize_SpritesNotLoaded_IsNil)
 TEST_F(LuaInventoryApiTest, EveryAddition_IsDocumented)
 {
 	for (const char *key : { "getBodyItem", "getInventoryItemAt", "getInventoryItemCells", "getItemLocation", "canUseItem",
-	         "say" }) {
+	         "setInventoryCellReserved", "isInventoryCellReserved", "say" }) {
 		SCOPED_TRACE(key);
 		EXPECT_EQ(Run<bool>(StrCat("return #p.__doc_", key, " > 0 and #p.__sig_", key, " > 0")), true);
 	}

@@ -206,4 +206,11 @@ bool SmithWillBuy(const Item &item);
  */
 bool WitchWillBuy(const Item &item);
 
+/**
+ * @brief Checks if the gold from a sale would fit in the inventory once the sold item has left it.
+ * @param value The amount of gold.
+ * @param invIndex Index in MyPlayer's InvList of the item being sold, negative if the sale frees no grid cell.
+ */
+bool GoldFitsAfterSale(int value, int invIndex);
+
 } // namespace devilution

@@ -715,6 +715,12 @@ void CheckVisualStorePaste(Point mousePosition)
 	// Calculate sell price
 	int sellPrice = GetSellPrice(player.HoldItem);
 
+	// Reserved cells can leave the gold without room, while the inventory shows empty cells
+	if (player.reservedInvCells.any() && !GoldFitsAfterSale(sellPrice, /*invIndex=*/-1)) {
+		player.SaySpecific(HeroSpeech::ICantCarryAnymore);
+		return;
+	}
+
 	// Add gold to player
 	AddGoldToInventory(player, sellPrice);
 	PlaySFX(SfxID::ItemGold);
@@ -760,12 +766,22 @@ void SellItemToVisualStore(int invIndex)
 	// Calculate sell price
 	int sellPrice = GetSellPrice(item);
 
+	// Reserved cells can leave the gold without room, while the inventory shows empty cells
+	if (player.reservedInvCells.any() && !GoldFitsAfterSale(sellPrice, invIndex)) {
+		player.SaySpecific(HeroSpeech::ICantCarryAnymore);
+		return;
+	}
+
 	// Add gold to player
-	AddGoldToInventory(player, sellPrice);
+	const int unplacedGold = AddGoldToInventory(player, sellPrice);
 	PlaySFX(SfxID::ItemGold);
 
 	// Remove item from inventory
 	player.RemoveInvItem(invIndex);
+
+	// With reserved cells the sold item's own cells can be the only room left for the gold
+	if (player.reservedInvCells.any())
+		AddGoldToInventory(player, unplacedGold);
 }
 
 void CheckVisualStoreButtonPress(Point mousePosition)

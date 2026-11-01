@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <string_view>
 
 #include "diablo.h"
@@ -297,6 +298,8 @@ struct Player {
 	int8_t _pDFrames;
 	int8_t _pBFrames;
 	int8_t InvGrid[InventoryGridCells];
+	/** Cells automatic placement must not use and automatic rearranging must not disturb. Runtime only, not saved. */
+	std::bitset<InventoryGridCells> reservedInvCells;
 
 	uint8_t plrlevel;
 	bool plrIsOnSetLevel;

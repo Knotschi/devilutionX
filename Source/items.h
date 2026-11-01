@@ -485,11 +485,11 @@ struct CornerStoneStruct {
 };
 
 /** Contains the items on ground in the current game. */
-extern Item Items[MAXITEMS + 1];
+extern DVL_API_FOR_TEST Item Items[MAXITEMS + 1];
 extern uint8_t ActiveItems[MAXITEMS];
 extern uint8_t ActiveItemCount;
 /** Contains the location of dropped items. */
-extern int8_t dItem[MAXDUNX][MAXDUNY];
+extern DVL_API_FOR_TEST int8_t dItem[MAXDUNX][MAXDUNY];
 extern bool ShowUniqueItemInfoBox;
 extern CornerStoneStruct CornerStone;
 extern DVL_API_FOR_TEST bool UniqueItemFlags[128];

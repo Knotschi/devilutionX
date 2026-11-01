@@ -203,6 +203,22 @@ void InitPlayerUserType(sol::state_view &lua)
 		    const Item *itemPointer = ToItem(item);
 		    return player != nullptr && itemPointer != nullptr && player->CanUseItem(*itemPointer);
 	    });
+	LuaSetDocFn(playerType, "setInventoryCellReserved", "(cell: integer, reserved: boolean)",
+	    "Reserve an inventory cell: automatic placement won't use it and sorting won't move items touching it. Placing items by hand is unaffected. Lasts until the hero is loaded again. Does nothing given a bad cell, or anything but a boolean.",
+	    [](const sol::object &self, const sol::object &cell, const sol::object &reserved) {
+		    Player *player = ToPlayer(self);
+		    const std::optional<int> index = ToIndex(cell, InventoryGridCells);
+		    if (player == nullptr || !index.has_value() || reserved.get_type() != sol::type::boolean)
+			    return;
+		    player->reservedInvCells.set(*index, reserved.as<bool>());
+	    });
+	LuaSetDocFn(playerType, "isInventoryCellReserved", "(cell: integer) -> boolean",
+	    "Whether an inventory cell is reserved. False if the cell doesn't exist.",
+	    [](const sol::object &self, const sol::object &cell) -> bool {
+		    const Player *player = ToPlayer(self);
+		    const std::optional<int> index = ToIndex(cell, InventoryGridCells);
+		    return player != nullptr && index.has_value() && player->reservedInvCells.test(*index);
+	    });
 	LuaSetDocFn(playerType, "say", "(speech: HeroSpeech)",
 	    "Speak a line, unless it is already being spoken. Does nothing given anything but a HeroSpeech.",
 	    [](const sol::object &self, const sol::object &speech) {
