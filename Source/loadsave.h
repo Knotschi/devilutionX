@@ -25,6 +25,8 @@ _item_indexes RemapItemIdxToSpawn(_item_indexes i);
 bool IsHeaderValid(uint32_t magicNumber);
 void LoadHotkeys();
 void LoadHeroItems(Player &player);
+/** @brief Loads the hero store of a save. A missing or invalid entry leaves the store empty. */
+void LoadHeroStore(uint32_t saveNum);
 /**
  * @brief Remove invalid inventory items from the inventory grid
  * @param player The player to remove invalid items from
@@ -38,6 +40,8 @@ void RemoveEmptyInventory(Player &player);
 std::expected<void, std::string> LoadGame(bool firstflag);
 void SaveHotkeys(SaveWriter &saveWriter, const Player &player);
 void SaveHeroItems(SaveWriter &saveWriter, Player &player);
+/** @brief Writes the hero store. An empty store has no entry, so that saves not using it stay as they were. */
+void SaveHeroStore(SaveWriter &saveWriter);
 void SaveGameData(SaveWriter &saveWriter);
 void SaveGame();
 void SaveLevel(SaveWriter &saveWriter);

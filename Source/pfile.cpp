@@ -26,6 +26,7 @@
 #include "engine/load_file.hpp"
 #include "engine/render/primitive_render.hpp"
 #include "game_mode.hpp"
+#include "hero_store.hpp"
 #include "loadsave.h"
 #include "menu.h"
 #include "mods/mod_identity.h"
@@ -538,6 +539,7 @@ void pfile_write_hero(SaveWriter &saveWriter, bool writeGameData)
 	if (!gbVanilla) {
 		SaveHotkeys(saveWriter, myPlayer);
 		SaveHeroItems(saveWriter, myPlayer);
+		SaveHeroStore(saveWriter);
 	}
 }
 
@@ -758,6 +760,8 @@ bool pfile_ui_save_create(_uiheroinfo *heroinfo)
 	saveWriter.RemoveHashEntries(GetFileName);
 	CopyUtf8(hero_names[saveNum], heroinfo->name, sizeof(hero_names[saveNum]));
 
+	ClearHeroStore();
+
 	Player &player = Players[0];
 	CreatePlayer(player, heroinfo->heroclass);
 	CopyUtf8(player._pName, heroinfo->name, PlayerNameLength);
@@ -767,6 +771,7 @@ bool pfile_ui_save_create(_uiheroinfo *heroinfo)
 	if (!gbVanilla) {
 		SaveHotkeys(saveWriter, player);
 		SaveHeroItems(saveWriter, player);
+		SaveHeroStore(saveWriter);
 	}
 
 	return true;
@@ -799,6 +804,7 @@ void pfile_read_player_from_save(uint32_t saveNum, Player &player)
 
 	UnPackPlayer(pkplr, player);
 	LoadHeroItems(player);
+	LoadHeroStore(saveNum);
 	RemoveAllInvalidItems(player);
 	CalcPlrInv(player, false);
 }

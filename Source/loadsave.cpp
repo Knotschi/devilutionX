@@ -25,6 +25,7 @@
 #include "engine/point.hpp"
 #include "engine/random.hpp"
 #include "game_mode.hpp"
+#include "hero_store.hpp"
 #include "inv.h"
 #include "levels/dun_tile.hpp"
 #include "levels/town_data.h"
@@ -44,6 +45,7 @@
 #include "utils/endian_swap.hpp"
 #include "utils/is_of.hpp"
 #include "utils/language.h"
+#include "utils/log.hpp"
 #include "utils/status_macros.hpp"
 
 namespace devilution {
@@ -2413,6 +2415,23 @@ void LoadHeroItems(Player &player)
 	gbIsHellfireSaveGame = gbIsHellfire;
 }
 
+void LoadHeroStore(uint32_t saveNum)
+{
+	ClearHeroStore();
+
+	std::optional<SaveReader> archive = OpenSaveArchive(saveNum);
+	if (!archive)
+		return;
+
+	size_t size = 0;
+	const std::unique_ptr<std::byte[]> data = ReadArchive(*archive, "herostore", &size);
+	if (data == nullptr)
+		return;
+
+	if (!DeserializeHeroStore({ data.get(), size }))
+		LogError("Ignoring invalid hero store of save {}", saveNum);
+}
+
 constexpr uint8_t StashVersion = 0;
 
 void LoadStash()
@@ -2488,6 +2507,8 @@ std::expected<void, std::string> LoadGame(bool firstflag)
 	if (!IsHeaderValid(file.NextLE<uint32_t>())) {
 		return std::unexpected(std::string(_("Invalid save file")));
 	}
+
+	LoadHeroStore(gSaveNumber);
 
 	if (gbIsHellfireSaveGame) {
 		giNumberOfLevels = 25;
@@ -2713,6 +2734,19 @@ void SaveHeroItems(SaveWriter &saveWriter, Player &player)
 		SaveItem(file, item);
 	for (const Item &item : player.SpdList)
 		SaveItem(file, item);
+}
+
+void SaveHeroStore(SaveWriter &saveWriter)
+{
+	if (IsHeroStoreEmpty()) {
+		if (saveWriter.HasFile("herostore"))
+			saveWriter.RemoveHashEntry("herostore");
+		return;
+	}
+
+	const std::vector<std::byte> data = SerializeHeroStore();
+	SaveHelper file(saveWriter, "herostore", data.size());
+	file.WriteBytes(data.data(), data.size());
 }
 
 void SaveStash(SaveWriter &stashWriter)

@@ -15,6 +15,7 @@ set(libdevilutionx_SRCS
   gamemenu.cpp
   gmenu.cpp
   help.cpp
+  hero_store.cpp
   hwcursor.cpp
   interfac.cpp
   inv.cpp
@@ -110,6 +111,7 @@ set(libdevilutionx_SRCS
   lua/modules/dev/search.cpp
   lua/modules/dev/towners.cpp
   lua/modules/floatingnumbers.cpp
+  lua/modules/herostore.cpp
   lua/modules/i18n.cpp
   lua/modules/input.cpp
   lua/modules/items.cpp

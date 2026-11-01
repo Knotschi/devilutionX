@@ -60,6 +60,7 @@ set(tests
   lua_inventory_api_test
   lua_inventory_events_test
   lua_input_api_test
+  hero_store_test
   spell_ui_test
   char_panel_test
   game_menu_test
