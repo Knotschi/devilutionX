@@ -62,14 +62,19 @@ void KeymapperPress(SDL_Keycode key)
 	action->actionPressed();
 }
 
-void KeymapperRelease(SDL_Keycode key)
+void KeymapperRelease(SDL_Keycode key, bool onlyRuntimeActions)
 {
 	key = ToAsciiUpper(key);
 	const KeymapperOptions::Action *action = GetOptions().Keymapper.findAction(static_cast<uint32_t>(key));
 	if (action == nullptr || !action->actionReleased || !action->isEnabled()) return;
 
-	// TODO: This should be handled outside of the keymapper.
-	if ((ChatFlag && IsTextEntryKey(key)) || (DropGoldFlag && IsNumberEntryKey(key))) return;
+	// A runtime action may be tracking that its key is held, so it gets every release.
+	if (!action->isRuntime()) {
+		if (onlyRuntimeActions) return;
+
+		// TODO: This should be handled outside of the keymapper.
+		if ((ChatFlag && IsTextEntryKey(key)) || (DropGoldFlag && IsNumberEntryKey(key))) return;
+	}
 
 	action->actionReleased();
 }

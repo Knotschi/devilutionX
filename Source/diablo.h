@@ -89,7 +89,9 @@ extern char gszProductName[64];
 
 extern PlayerActionType LastPlayerAction;
 
+bool CanPlayerTakeAction();
 void InitKeymapActions();
+void InitPadmapActions();
 void SetCursorPos(Point position);
 void FreeGameMem();
 bool StartGame(bool bNewGame, bool bSinglePlayer);
@@ -102,6 +104,8 @@ void diablo_focus_pause();
 void diablo_focus_unpause();
 bool PressEscKey();
 void DisableInputEventHandler(const SDL_Event &event, uint16_t modState);
+/** @brief Hand over the key-ups a load held back. A load thread may be using Lua until then. */
+void ReleaseKeysDeferredByLoad();
 std::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir);
 bool IsDiabloAlive(bool playSFX);
 void PrintScreen(SDL_Keycode vkey);

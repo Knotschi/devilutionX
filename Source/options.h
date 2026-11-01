@@ -742,17 +742,26 @@ struct KeymapperOptions : OptionCategoryBase {
 		bool SetValue(int value);
 
 		[[nodiscard]] bool isEnabled() const { return !enable || enable(); }
+		/** @brief Whether this action came from AddRuntimeAction(). */
+		[[nodiscard]] bool isRuntime() const { return runtime; }
 
 		std::function<void()> actionPressed;
 		std::function<void()> actionReleased;
 
 	private:
+		/** @brief The key diablo.ini asks for, else the default key. */
+		[[nodiscard]] uint32_t KeyFromIni(std::string_view category) const;
+		void MakeRuntime(std::string_view runtimeKey, std::string_view runtimeName, std::string_view runtimeDescription);
+
 		uint32_t defaultKey;
 		std::function<bool()> enable;
 		uint32_t boundKey = SDLK_UNKNOWN;
 		unsigned dynamicIndex;
 		std::string dynamicKey;
 		mutable std::string dynamicName;
+		bool runtime = false;
+		std::string ownedName;
+		std::string ownedDescription;
 
 		friend struct KeymapperOptions;
 	};
@@ -767,6 +776,23 @@ struct KeymapperOptions : OptionCategoryBase {
 	    std::function<bool()> enable = nullptr,
 	    unsigned index = 0);
 	void CommitActions();
+
+	/**
+	 * @brief Adds an action to the end of the list once the game runs, for example for a mod.
+	 *
+	 * Binds the key from diablo.ini, else `defaultKey`. A key that is already bound stays with its
+	 * action and this one is left unbound. The action owns copies of the strings.
+	 *
+	 * @return false if an action with this key exists, nothing is added then.
+	 */
+	bool AddRuntimeAction(
+	    std::string_view key, std::string_view name, std::string_view description, uint32_t defaultKey,
+	    std::function<void()> actionPressed,
+	    std::function<void()> actionReleased);
+	/** @brief Removes a runtime action. Its current binding stays in diablo.ini for when it is added again. */
+	void RemoveRuntimeAction(std::string_view key);
+	[[nodiscard]] bool HasAction(std::string_view key) const;
+	[[nodiscard]] std::optional<uint32_t> KeyFromName(std::string_view keyName) const;
 
 	[[nodiscard]] const Action *findAction(uint32_t key) const;
 
@@ -809,12 +835,16 @@ struct PadmapperOptions : OptionCategoryBase {
 		bool SetValue(ControllerButtonCombo value);
 
 		[[nodiscard]] bool isEnabled() const { return !enable || enable(); }
+		/** @brief Whether this action came from AddRuntimeAction(). */
+		[[nodiscard]] bool isRuntime() const { return runtime; }
 
 		std::function<void()> actionPressed;
 		std::function<void()> actionReleased;
 		ControllerButtonCombo boundInput;
 
 	private:
+		void MakeRuntime(std::string_view runtimeKey, std::string_view runtimeName, std::string_view runtimeDescription);
+
 		ControllerButtonCombo defaultInput;
 		std::function<bool()> enable;
 		mutable GamepadLayout boundInputDescriptionType = GamepadLayout::Generic;
@@ -823,6 +853,9 @@ struct PadmapperOptions : OptionCategoryBase {
 		unsigned dynamicIndex;
 		std::string dynamicKey;
 		mutable std::string dynamicName;
+		bool runtime = false;
+		std::string ownedName;
+		std::string ownedDescription;
 
 		void UpdateValueDescription() const;
 		std::string_view Shorten(std::string_view buttonName) const;
@@ -840,6 +873,27 @@ struct PadmapperOptions : OptionCategoryBase {
 	    std::function<bool()> enable = nullptr,
 	    unsigned index = 0);
 	void CommitActions();
+
+	/**
+	 * @brief Adds an action to the end of the list once the game runs, for example for a mod.
+	 *
+	 * Binds the input from diablo.ini, else `defaultInput`, unless another action already has that default.
+	 * The action owns copies of the strings.
+	 *
+	 * @return false if an action with this key exists, nothing is added then.
+	 */
+	bool AddRuntimeAction(
+	    std::string_view key, std::string_view name, std::string_view description, ControllerButtonCombo defaultInput,
+	    std::function<void()> actionPressed,
+	    std::function<void()> actionReleased);
+	/**
+	 * @brief Removes a runtime action. Its current binding stays in diablo.ini for when it is added again.
+	 *
+	 * The padmapper may hold a pointer to the action: use PadmapperRemoveRuntimeAction() instead.
+	 */
+	void RemoveRuntimeAction(std::string_view key);
+	[[nodiscard]] bool HasAction(std::string_view key) const;
+
 	std::string_view InputNameForAction(std::string_view actionName, bool useShortName = false) const;
 	ControllerButtonCombo ButtonComboForAction(std::string_view actionName) const;
 

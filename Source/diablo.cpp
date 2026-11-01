@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 #ifdef USE_SDL3
 #include <SDL3/SDL_events.h>
@@ -481,12 +482,13 @@ void RightMouseDown(bool isShiftHeld)
 	}
 }
 
+/** Runtime actions must see these key-ups, but not from the input handler of a threaded load. */
+std::vector<SDL_Keycode> KeysReleasedDuringLoad;
+
 void ReleaseKey(SDL_Keycode vkey)
 {
 	remap_keyboard_key(&vkey);
-	if (sgnTimeoutCurs != CURSOR_NONE)
-		return;
-	KeymapperRelease(vkey);
+	KeymapperRelease(vkey, /*onlyRuntimeActions=*/sgnTimeoutCurs != CURSOR_NONE);
 }
 
 void ClosePanels()
@@ -739,6 +741,7 @@ void PrepareForFadeIn()
 
 void GameEventHandler(const SDL_Event &event, uint16_t modState)
 {
+	ReleaseKeysDeferredByLoad();
 	[[maybe_unused]] const Options &options = GetOptions();
 	StaticVector<ControllerButtonEvent, 4> ctrlEvents = ToControllerButtonEvents(event);
 	for (const ControllerButtonEvent ctrlEvent : ctrlEvents) {
@@ -1785,11 +1788,6 @@ bool IsGameRunning()
 	return PauseMode != 2;
 }
 
-bool CanPlayerTakeAction()
-{
-	return !IsPlayerDead() && IsGameRunning();
-}
-
 bool CanAutomapBeToggledOff()
 {
 	// check if every window is closed - if yes, automap can be toggled off
@@ -1835,6 +1833,11 @@ uint32_t GetGameId()
 	if (hasUnrecognisedMod)
 		return GameIdGenericMod;
 	return gbIsSpawn ? GameIdDiabloSpawn : GameIdDiabloFull;
+}
+
+bool CanPlayerTakeAction()
+{
+	return !IsPlayerDead() && IsGameRunning();
 }
 
 void InitKeymapActions()
@@ -3044,9 +3047,19 @@ bool PressEscKey()
 	return rv;
 }
 
+void ReleaseKeysDeferredByLoad()
+{
+	for (const SDL_Keycode key : KeysReleasedDuringLoad)
+		ReleaseKey(key);
+	KeysReleasedDuringLoad.clear();
+}
+
 void DisableInputEventHandler(const SDL_Event &event, uint16_t /*modState*/)
 {
 	switch (event.type) {
+	case SDL_EVENT_KEY_UP:
+		KeysReleasedDuringLoad.push_back(SDLC_EventKey(event));
+		break;
 	case SDL_EVENT_MOUSE_MOTION:
 		MousePosition = { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
 		return;

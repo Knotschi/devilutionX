@@ -30,6 +30,7 @@
 #include "lua/modules/floatingnumbers.hpp"
 #include "lua/modules/hellfire.hpp"
 #include "lua/modules/i18n.hpp"
+#include "lua/modules/input.hpp"
 #include "lua/modules/items.hpp"
 #include "lua/modules/log.hpp"
 #include "lua/modules/monsters.hpp"
@@ -239,6 +240,9 @@ void AddModsChangedHandler(tl::function_ref<void()> callback)
 
 void LuaReloadActiveMods()
 {
+	// Runs the release of a held pad button, which needs the old mods in place.
+	ClearLuaActions();
+
 	// Loaded without a sandbox.
 	CurrentLuaState->events = RunScript(/*env=*/std::nullopt, "devilutionx.events", /*optional=*/false);
 	CurrentLuaState->commonPackages["devilutionx.events"] = CurrentLuaState->events;
@@ -305,6 +309,7 @@ void LuaInitialize()
 #endif
 	    "devilutionx.version", PROJECT_VERSION,
 	    "devilutionx.i18n", LuaI18nModule(lua),
+	    "devilutionx.input", LuaInputModule(lua),
 	    "devilutionx.items", LuaItemModule(lua),
 	    "devilutionx.log", LuaLogModule(lua),
 	    "devilutionx.audio", LuaAudioModule(lua),
@@ -337,6 +342,7 @@ void LuaShutdown()
 	// Must clear before destroying the Lua state: registered callbacks
 	// capture sol::function handles that reference CurrentLuaState.
 	ClearTownerDialogOptions();
+	ClearLuaActions();
 	CurrentLuaState = std::nullopt;
 }
 

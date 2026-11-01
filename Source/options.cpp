@@ -1207,31 +1207,45 @@ std::string_view KeymapperOptions::Action::GetName() const
 	return dynamicName;
 }
 
-void KeymapperOptions::Action::LoadFromIni(std::string_view category)
+void KeymapperOptions::Action::MakeRuntime(std::string_view runtimeKey, std::string_view runtimeName, std::string_view runtimeDescription)
 {
+	runtime = true;
+	dynamicKey = runtimeKey;
+	key = dynamicKey;
+	ownedName = runtimeName;
+	name = ownedName.c_str();
+	ownedDescription = runtimeDescription;
+	description = ownedDescription.c_str();
+}
+
+uint32_t KeymapperOptions::Action::KeyFromIni(std::string_view category) const
+{
+	if (!ini.has_value())
+		return defaultKey;
+
 	const std::span<const Ini::Value> iniValues = ini->get(category, key);
-	if (iniValues.empty()) {
-		SetValue(defaultKey);
-		return; // Use the default key if no key has been set.
-	}
+	if (iniValues.empty())
+		return defaultKey; // Use the default key if no key has been set.
 
 	const std::string_view iniValue = iniValues.back().value;
-	if (iniValue.empty()) {
-		SetValue(SDLK_UNKNOWN);
-		return;
-	}
+	if (iniValue.empty())
+		return SDLK_UNKNOWN;
 
 	auto keyIt = GetOptions().Keymapper.keyNameToKeyID.find(iniValue);
 	if (keyIt == GetOptions().Keymapper.keyNameToKeyID.end()) {
 		// Use the default key if the key is unknown.
 		Log("Keymapper: unknown key '{}'", iniValue);
-		SetValue(defaultKey);
-		return;
+		return defaultKey;
 	}
 
+	return keyIt->second;
+}
+
+void KeymapperOptions::Action::LoadFromIni(std::string_view category)
+{
 	// Store the key in action.key and in the map so we can save() the
 	// actions while keeping the same order as they have been added.
-	SetValue(keyIt->second);
+	SetValue(KeyFromIni(category));
 }
 void KeymapperOptions::Action::SaveToIni(std::string_view category) const
 {
@@ -1296,6 +1310,54 @@ void KeymapperOptions::AddAction(std::string_view key, const char *name, const c
 void KeymapperOptions::CommitActions()
 {
 	actions.reverse();
+}
+
+bool KeymapperOptions::AddRuntimeAction(std::string_view key, std::string_view name, std::string_view description, uint32_t defaultKey, std::function<void()> actionPressed, std::function<void()> actionReleased)
+{
+	auto last = actions.before_begin();
+	for (auto it = actions.begin(); it != actions.end(); ++it) {
+		if (it->key == key)
+			return false;
+		last = it;
+	}
+
+	Action &action = *actions.emplace_after(last, key, "", "", defaultKey, std::move(actionPressed), std::move(actionReleased), nullptr, 0);
+	action.MakeRuntime(key, name, description);
+
+	// SetValue() takes a key from the action holding it. That is for the user's choice in the settings,
+	// which a default or a binding saved while this action did not exist is not.
+	const uint32_t wantedKey = action.KeyFromIni(GetKey());
+	if (!keyIDToAction.contains(wantedKey))
+		action.SetValue(static_cast<int>(wantedKey));
+	return true;
+}
+
+void KeymapperOptions::RemoveRuntimeAction(std::string_view key)
+{
+	auto previous = actions.before_begin();
+	for (auto it = actions.begin(); it != actions.end(); previous = it++) {
+		if (it->key != key || !it->runtime)
+			continue;
+		// Settings only write the ini on exit, and changing a mod there removes this action first.
+		if (ini.has_value())
+			it->SaveToIni(GetKey());
+		it->SetValue(SDLK_UNKNOWN);
+		actions.erase_after(previous);
+		return;
+	}
+}
+
+bool KeymapperOptions::HasAction(std::string_view key) const
+{
+	return std::any_of(actions.begin(), actions.end(), [key](const Action &action) { return action.key == key; });
+}
+
+std::optional<uint32_t> KeymapperOptions::KeyFromName(std::string_view keyName) const
+{
+	const auto it = keyNameToKeyID.find(keyName);
+	if (it == keyNameToKeyID.end())
+		return std::nullopt;
+	return it->second;
 }
 
 const KeymapperOptions::Action *KeymapperOptions::findAction(uint32_t key) const
@@ -1385,8 +1447,24 @@ std::string_view PadmapperOptions::Action::GetName() const
 	return dynamicName;
 }
 
+void PadmapperOptions::Action::MakeRuntime(std::string_view runtimeKey, std::string_view runtimeName, std::string_view runtimeDescription)
+{
+	runtime = true;
+	dynamicKey = runtimeKey;
+	key = dynamicKey;
+	ownedName = runtimeName;
+	name = ownedName.c_str();
+	ownedDescription = runtimeDescription;
+	description = ownedDescription.c_str();
+}
+
 void PadmapperOptions::Action::LoadFromIni(std::string_view category)
 {
+	if (!ini.has_value()) {
+		SetValue(defaultInput);
+		return;
+	}
+
 	const std::span<const Ini::Value> iniValues = ini->get(category, key);
 	if (iniValues.empty()) {
 		SetValue(defaultInput);
@@ -1518,6 +1596,43 @@ void PadmapperOptions::CommitActions()
 		return;
 	actions.reverse();
 	committed = true;
+}
+
+bool PadmapperOptions::AddRuntimeAction(std::string_view key, std::string_view name, std::string_view description, ControllerButtonCombo defaultInput, std::function<void()> actionPressed, std::function<void()> actionReleased)
+{
+	bool isDefaultFree = true;
+	auto last = actions.before_begin();
+	for (auto it = actions.begin(); it != actions.end(); ++it) {
+		if (it->key == key)
+			return false;
+		if (it->boundInput.button == defaultInput.button && it->boundInput.modifier == defaultInput.modifier)
+			isDefaultFree = false;
+		last = it;
+	}
+
+	Action &action = *actions.emplace_after(last, key, "", "", isDefaultFree ? defaultInput : ControllerButtonCombo {}, std::move(actionPressed), std::move(actionReleased), nullptr, 0);
+	action.MakeRuntime(key, name, description);
+	action.LoadFromIni(GetKey());
+	return true;
+}
+
+void PadmapperOptions::RemoveRuntimeAction(std::string_view key)
+{
+	auto previous = actions.before_begin();
+	for (auto it = actions.begin(); it != actions.end(); previous = it++) {
+		if (it->key != key || !it->runtime)
+			continue;
+		// Settings only write the ini on exit, and changing a mod there removes this action first.
+		if (ini.has_value())
+			it->SaveToIni(GetKey());
+		actions.erase_after(previous);
+		return;
+	}
+}
+
+bool PadmapperOptions::HasAction(std::string_view key) const
+{
+	return std::any_of(actions.begin(), actions.end(), [key](const Action &action) { return action.key == key; });
 }
 
 std::string_view PadmapperOptions::InputNameForAction(std::string_view actionName, bool useShortName) const

@@ -59,7 +59,7 @@ extern std::optional<OwnedSurface> BottomBuffer;
 extern OptionalOwnedClxSpriteList GoldBoxBuffer;
 
 extern bool MainPanelFlag;
-extern bool ChatFlag;
+extern DVL_API_FOR_TEST bool ChatFlag;
 extern DVL_API_FOR_TEST bool SpellbookFlag;
 extern DVL_API_FOR_TEST bool CharFlag;
 extern DVL_API_FOR_TEST bool SpellSelectFlag;
@@ -197,7 +197,7 @@ void DrawFlaskValues(const Surface &out, Point pos, int currValue, int maxValue)
  */
 void UpdateLifeManaPercent();
 
-extern bool DropGoldFlag;
+extern DVL_API_FOR_TEST bool DropGoldFlag;
 
 void DrawGoldSplit(const Surface &out);
 void control_drop_gold(SDL_Keycode vkey);

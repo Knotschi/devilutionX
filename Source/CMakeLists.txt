@@ -111,6 +111,7 @@ set(libdevilutionx_SRCS
   lua/modules/dev/towners.cpp
   lua/modules/floatingnumbers.cpp
   lua/modules/i18n.cpp
+  lua/modules/input.cpp
   lua/modules/items.cpp
   lua/modules/log.cpp
   lua/modules/monsters.cpp

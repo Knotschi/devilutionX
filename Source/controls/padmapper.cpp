@@ -1,6 +1,7 @@
 #include "controls/padmapper.hpp"
 
 #include <array>
+#include <cstddef>
 
 #include "controller.h"
 #include "game_controls.h"
@@ -51,6 +52,17 @@ void PadmapperReleaseAllActiveButtons()
 			PadmapperRelease(action->boundInput.button, /*invokeAction=*/true);
 		}
 	}
+}
+
+void PadmapperRemoveRuntimeAction(std::string_view key)
+{
+	// Scans by slot: the action may have been rebound since its button went down.
+	for (size_t i = 0; i < ButtonToReleaseAction.size(); ++i) {
+		const PadmapperOptions::Action *action = ButtonToReleaseAction[i];
+		if (action != nullptr && action->key == key)
+			PadmapperRelease(static_cast<ControllerButton>(i), /*invokeAction=*/true);
+	}
+	GetOptions().Padmapper.RemoveRuntimeAction(key);
 }
 
 std::string_view PadmapperActionNameTriggeredByButtonEvent(ControllerButtonEvent ctrlEvent)

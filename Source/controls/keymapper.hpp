@@ -15,6 +15,7 @@
 namespace devilution {
 
 void KeymapperPress(SDL_Keycode key);
-void KeymapperRelease(SDL_Keycode key);
+/** @param onlyRuntimeActions The game ignores keys for now, only a held runtime action still needs its release. */
+void KeymapperRelease(SDL_Keycode key, bool onlyRuntimeActions = false);
 
 } // namespace devilution
