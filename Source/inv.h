@@ -9,6 +9,7 @@
 
 #include "engine/palette.h"
 #include "engine/point.hpp"
+#include "engine/rectangle.hpp"
 #include "inv_iterators.hpp"
 #include "items.h"
 #include "player.h"
@@ -84,7 +85,7 @@ enum item_color : uint8_t {
 };
 
 extern DVL_API_FOR_TEST bool invflag;
-extern const Rectangle InvRect[NUM_XY_SLOTS];
+extern DVL_API_FOR_TEST const Rectangle InvRect[NUM_XY_SLOTS];
 
 void InvDrawSlotBack(const Surface &out, Point targetPosition, Size size, item_quality itemQuality);
 /**
@@ -109,6 +110,15 @@ void InitInv();
  * @brief Render the inventory panel to the given buffer.
  */
 void DrawInv(const Surface &out);
+
+/**
+ * @brief Draws part of the inventory panel art somewhere else, clipped to the buffer and to the art.
+ * @param out Output buffer.
+ * @param region The part of the art, relative to its top left corner.
+ * @param position Where the top left corner of the region goes.
+ * @param shade Index into LightTables: 0 leaves the colors alone, higher is darker.
+ */
+void DrawInventoryPanelRegion(const Surface &out, Rectangle region, Point position, int shade);
 
 void DrawInvBelt(const Surface &out);
 

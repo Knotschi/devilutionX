@@ -23,6 +23,7 @@
 #include "cursor_defs.hpp"
 #include "engine/backbuffer_state.hpp"
 #include "engine/clx_sprite.hpp"
+#include "engine/light_tables.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/palette.h"
 #include "engine/render/clx_render.hpp"
@@ -32,6 +33,7 @@
 #include "inv_iterators.hpp"
 #include "levels/tile_properties.hpp"
 #include "levels/town.h"
+#include "lua/lua_event.hpp"
 #include "minitext.h"
 #include "options.h"
 #include "panels/ui_panels.hpp"
@@ -1185,6 +1187,9 @@ void DrawInv(const Surface &out)
 {
 	ClxDraw(out, GetPanelPosition(UiPanels::Inventory, { 0, 351 }), (*pInvCels)[0]);
 
+	if (!IsInspectingPlayer())
+		lua::InventoryDrawBackground();
+
 	const Size slotSize[] = {
 		{ 2, 2 }, // head
 		{ 1, 1 }, // left ring
@@ -1267,6 +1272,34 @@ void DrawInv(const Surface &out)
 			DrawItem(myPlayer.InvList[ii], out, position, sprite);
 		}
 	}
+
+	if (!IsInspectingPlayer())
+		lua::InventoryDrawComplete();
+}
+
+void DrawInventoryPanelRegion(const Surface &out, Rectangle region, Point position, int shade)
+{
+	if (!pInvCels)
+		return;
+
+	const ClxSprite panel = (*pInvCels)[0];
+	const int64_t left = std::max<int64_t>({ position.x, 0, int64_t { position.x } - region.position.x });
+	const int64_t top = std::max<int64_t>({ position.y, 0, int64_t { position.y } - region.position.y });
+	const int64_t right = std::min<int64_t>({ int64_t { position.x } + region.size.width, out.w(), int64_t { position.x } - region.position.x + panel.width() });
+	const int64_t bottom = std::min<int64_t>({ int64_t { position.y } + region.size.height, out.h(), int64_t { position.y } - region.position.y + panel.height() });
+	if (left >= right || top >= bottom)
+		return;
+
+	// The clipped window is on the screen and on the panel, so what follows fits an int.
+	const Surface window = out.subregion(static_cast<int>(left), static_cast<int>(top), static_cast<int>(right - left), static_cast<int>(bottom - top));
+	const Point panelBottomLeft {
+		static_cast<int>(int64_t { position.x } - left - region.position.x),
+		static_cast<int>(int64_t { position.y } - top - region.position.y + panel.height() - 1),
+	};
+	if (shade == 0)
+		ClxDraw(window, panelBottomLeft, panel);
+	else
+		ClxDrawTRN(window, panelBottomLeft, panel, LightTables[shade].data());
 }
 
 void DrawInvBelt(const Surface &out)
@@ -1647,6 +1680,9 @@ void TransferItemToStash(Player &player, int location)
 void CheckInvItem(bool isShiftHeld, bool isCtrlHeld)
 {
 	if (IsInspectingPlayer())
+		return;
+	const std::optional<inv_xy_slot> slot = FindSlotUnderCursor(MousePosition);
+	if (slot && *slot >= SLOTXY_INV_FIRST && *slot <= SLOTXY_INV_LAST && lua::InventoryCellClicked(*slot - SLOTXY_INV_FIRST))
 		return;
 	if (!MyPlayer->HoldItem.isEmpty()) {
 		CheckInvPaste(*MyPlayer, MousePosition);

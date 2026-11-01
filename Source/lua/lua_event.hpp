@@ -25,6 +25,13 @@ void OnPlayerTakeDamage(const Player *player, int damage, int damageType);
 void LoadModsComplete();
 void GameDrawComplete();
 void GameStart();
+/**
+ * @param cell The cell of the inventory grid.
+ * @return Whether a handler took the click, so the game has to ignore it.
+ */
+bool InventoryCellClicked(int cell);
+void InventoryDrawBackground();
+void InventoryDrawComplete();
 
 } // namespace lua
 

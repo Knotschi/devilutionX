@@ -13,13 +13,14 @@
 #endif
 
 #include "engine/surface.hpp"
+#include "utils/attributes.h"
 
 namespace devilution {
 
 /** Whether we render directly to the screen surface, i.e. `PalSurface == GetOutputSurface()` */
 extern bool RenderDirectlyToOutputSurface;
 
-extern SDL_Surface *PalSurface;
+extern DVL_API_FOR_TEST SDL_Surface *PalSurface;
 
 Surface GlobalBackBuffer();
 

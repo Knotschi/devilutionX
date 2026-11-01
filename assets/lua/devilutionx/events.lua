@@ -1,4 +1,6 @@
-local function CreateEvent()
+---@param options? { stopOnTruthy: boolean } With stopOnTruthy, the first handler to return a truthy value ends the event, and `trigger` returns true.
+local function CreateEvent(options)
+  local stopOnTruthy = options ~= nil and options.stopOnTruthy
   local functions = {}
   return {
     ---Adds an event handler.
@@ -29,6 +31,9 @@ local function CreateEvent()
       local result
       for _, func in ipairs(functions) do
         result = func(...)
+        if stopOnTruthy and result then
+          return true
+        end
       end
       return result
     end,
@@ -57,13 +62,27 @@ local events = {
   UniqueMonsterDataLoaded = CreateEvent(),
   __doc_UniqueMonsterDataLoaded = "Called after the unique monster data TSV file has been loaded.",
 
-  ---Called every time a new game is started.
+  ---Called every time a new game is started, and after a saved game is loaded from the in-game menu.
   GameStart = CreateEvent(),
-  __doc_GameStart = "Called every time a new game is started.",
+  __doc_GameStart = "Called every time a new game is started, and after a saved game is loaded from the in-game menu.",
 
   ---Called every frame at the end.
   GameDrawComplete = CreateEvent(),
   __doc_GameDrawComplete = "Called every frame at the end.",
+
+  ---Called when a cell of the inventory grid is clicked, before the game handles the click. Passes the cell as argument.
+  ---A handler that returns true takes the click: the game ignores it and later handlers are not called.
+  ---A handler that changes the inventory has to take the click.
+  InventoryCellClicked = CreateEvent({ stopOnTruthy = true }),
+  __doc_InventoryCellClicked = "Called when a cell of the inventory grid is clicked, before the game handles the click. Passes the cell as argument. A handler that returns true takes the click: the game ignores it and later handlers are not called. A handler that changes the inventory has to take the click.",
+
+  ---Called after the art of the inventory panel has been drawn, before slot backgrounds and items, so what a handler draws ends up below them. Not called while inspecting another player.
+  InventoryDrawBackground = CreateEvent(),
+  __doc_InventoryDrawBackground = "Called after the art of the inventory panel has been drawn, before slot backgrounds and items, so what a handler draws ends up below them. Not called while inspecting another player.",
+
+  ---Called after the inventory panel has been drawn, below the cursor and tooltips. Not called while inspecting another player.
+  InventoryDrawComplete = CreateEvent(),
+  __doc_InventoryDrawComplete = "Called after the inventory panel has been drawn, below the cursor and tooltips. Not called while inspecting another player.",
 
   ---Called when opening a towner store. Passes the towner name as argument (e.g., "griswold", "adria", "pepin", "wirt", "cain").
   StoreOpened = CreateEvent(),

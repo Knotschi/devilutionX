@@ -100,6 +100,18 @@ void GameStart()
 {
 	CallLuaEvent("GameStart");
 }
+bool InventoryCellClicked(int cell)
+{
+	return CallLuaEventReturn<bool>(false, "InventoryCellClicked", cell);
+}
+void InventoryDrawBackground()
+{
+	CallLuaEvent("InventoryDrawBackground");
+}
+void InventoryDrawComplete()
+{
+	CallLuaEvent("InventoryDrawComplete");
+}
 
 } // namespace lua
 

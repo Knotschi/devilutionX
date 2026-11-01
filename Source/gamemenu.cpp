@@ -20,6 +20,7 @@
 #include "gmenu.h"
 #include "headless_mode.hpp"
 #include "loadsave.h"
+#include "lua/lua_event.hpp"
 #include "multi.h"
 #include "options.h"
 #include "pfile.h"
@@ -330,6 +331,7 @@ void gamemenu_load_game(bool /*bActivate*/)
 	NewCursor(CURSOR_HAND);
 	interface_msg_pump();
 	SetEventHandler(saveProc);
+	lua::GameStart();
 }
 
 void gamemenu_save_game(bool /*bActivate*/)

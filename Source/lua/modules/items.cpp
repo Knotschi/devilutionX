@@ -1,10 +1,14 @@
 #include "lua/modules/items.hpp"
 
+#include <cstdint>
+#include <optional>
 #include <string_view>
 
 #include <sol/sol.hpp>
 
+#include "cursor.h"
 #include "data/file.hpp"
+#include "inv.h"
 #include "items.h"
 #include "lua/metadoc.hpp"
 #include "player.h"
@@ -14,6 +18,22 @@
 namespace devilution {
 
 namespace {
+
+/** Scripts can write any value to `curs`, which indexes tables as long as the list of item cursors. */
+bool HasKnownCursor(const Item &item)
+{
+	return item._iCurs <= ICURS_BOVINE;
+}
+
+/**
+ * @return The size of the item in inventory cells, or an empty optional if it has no sprite. Sprites only exist during a game.
+ */
+std::optional<Size> GetInventorySizeIfKnown(const Item &item)
+{
+	if (!HasInvItemSprite(item._iCurs + CURSOR_FIRSTITEM))
+		return std::nullopt;
+	return GetInventorySize(item);
+}
 
 void InitItemUserType(sol::state_view &lua)
 {
@@ -86,6 +106,20 @@ void InitItemUserType(sol::state_view &lua)
 	LuaSetDocProperty(itemType, "statFlag", "boolean", "Equippable flag", &Item::_iStatFlag);
 	LuaSetDocProperty(itemType, "damAcFlags", "ItemSpecialEffectHf", "Secondary special effect flags", &Item::_iDamAcFlags);
 	LuaSetDocProperty(itemType, "buff", "number", "Secondary creation flags", &Item::dwBuff);
+	LuaSetDocReadonlyProperty(itemType, "invWidth", "number|nil", "Width in inventory cells, nil if it has no sprite (readonly)",
+	    [](const Item &item) -> std::optional<int> {
+		    const std::optional<Size> size = GetInventorySizeIfKnown(item);
+		    return size.has_value() ? std::optional<int>(size->width) : std::nullopt;
+	    });
+	LuaSetDocReadonlyProperty(itemType, "invHeight", "number|nil", "Height in inventory cells, nil if it has no sprite (readonly)",
+	    [](const Item &item) -> std::optional<int> {
+		    const std::optional<Size> size = GetInventorySizeIfKnown(item);
+		    return size.has_value() ? std::optional<int>(size->height) : std::nullopt;
+	    });
+	LuaSetDocReadonlyProperty(itemType, "invSfx", "SfxID", "Sound of putting it in the inventory, for audio.playSfx. SfxID.None if it has no sprite. (readonly)",
+	    [](const Item &item) {
+		    return static_cast<int16_t>(HasKnownCursor(item) ? ItemInvSnds[ItemCAnimTbl[item._iCurs]] : SfxID::None);
+	    });
 
 	// Member functions
 	LuaSetDocFn(itemType, "pop", "() -> Item", "Clears this item and returns the old value", &Item::pop);
@@ -147,6 +181,20 @@ void RegisterItemEquipTypeEnum(sol::state_view &lua)
 	        { "Unequipable", ILOC_UNEQUIPABLE },
 	        { "Belt", ILOC_BELT },
 	        { "Invalid", ILOC_INVALID },
+	    });
+}
+
+void RegisterInvBodyLocEnum(sol::state_view &lua)
+{
+	lua.new_enum<inv_body_loc>("InvBodyLoc",
+	    {
+	        { "Head", INVLOC_HEAD },
+	        { "RingLeft", INVLOC_RING_LEFT },
+	        { "RingRight", INVLOC_RING_RIGHT },
+	        { "Amulet", INVLOC_AMULET },
+	        { "HandLeft", INVLOC_HAND_LEFT },
+	        { "HandRight", INVLOC_HAND_RIGHT },
+	        { "Chest", INVLOC_CHEST },
 	    });
 }
 
@@ -471,6 +519,7 @@ sol::table LuaItemModule(sol::state_view &lua)
 	InitItemUserType(lua);
 	RegisterItemTypeEnum(lua);
 	RegisterItemEquipTypeEnum(lua);
+	RegisterInvBodyLocEnum(lua);
 	RegisterItemClassEnum(lua);
 	RegisterItemSpecialEffectEnum(lua);
 	RegisterItemMiscIDEnum(lua);
@@ -483,6 +532,7 @@ sol::table LuaItemModule(sol::state_view &lua)
 
 	LuaSetDocFn(table, "addItemDataFromTsv", "(path: string, baseMappingId: number)", AddItemDataFromTsv);
 	LuaSetDocFn(table, "addUniqueItemDataFromTsv", "(path: string, baseMappingId: number)", AddUniqueItemDataFromTsv);
+	LuaSetDoc(table, "InvBodyLoc", "", "Body slots, for Player:getBodyItem", sol::object(lua["InvBodyLoc"]));
 
 	// Expose enums through the module table
 	table["ItemIndex"] = lua["ItemIndex"];

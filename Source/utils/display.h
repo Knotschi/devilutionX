@@ -33,7 +33,7 @@ extern SDLTextureUniquePtr texture;
 #endif
 
 extern SDLPaletteUniquePtr Palette;
-extern SDL_Surface *PalSurface;
+extern DVL_API_FOR_TEST SDL_Surface *PalSurface;
 extern DVL_API_FOR_TEST Size forceResolution;
 
 #ifdef USE_SDL1

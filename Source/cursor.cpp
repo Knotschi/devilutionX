@@ -461,6 +461,16 @@ void FreeCursor()
 	ClearCursor();
 }
 
+bool HasInvItemSprite(int cursId)
+{
+	if (cursId <= 0 || !pCursCels.has_value())
+		return false;
+	const size_t numSprites = pCursCels->numSprites();
+	if (static_cast<size_t>(cursId) <= numSprites)
+		return true;
+	return pCursCels2.has_value() && cursId - numSprites <= pCursCels2->numSprites();
+}
+
 ClxSprite GetInvItemSprite(int cursId)
 {
 	assert(cursId > 0);

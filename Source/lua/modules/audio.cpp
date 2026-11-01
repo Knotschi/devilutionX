@@ -1,5 +1,7 @@
 #include "lua/modules/audio.hpp"
 
+#include <cstdint>
+
 #include <magic_enum/magic_enum.hpp>
 #include <sol/sol.hpp>
 
@@ -32,6 +34,15 @@ void RegisterSfxIDEnum(sol::state_view &lua)
 	lua["SfxID"] = enumTable;
 }
 
+sol::table CreateHeroSpeechEnum(sol::state_view &lua)
+{
+	sol::table enumTable = lua.create_table();
+	for (const HeroSpeech enumValue : magic_enum::enum_values<HeroSpeech>()) {
+		enumTable[magic_enum::enum_name(enumValue)] = static_cast<uint8_t>(enumValue);
+	}
+	return enumTable;
+}
+
 } // namespace
 
 sol::table LuaAudioModule(sol::state_view &lua)
@@ -46,6 +57,7 @@ sol::table LuaAudioModule(sol::state_view &lua)
 	    [](int16_t psfx, int x, int y) { if (IsValidSfx(psfx)) PlaySfxLoc(static_cast<SfxID>(psfx), { x, y }); });
 	// Expose SfxID enum through the module table
 	table["SfxID"] = lua["SfxID"];
+	LuaSetDoc(table, "HeroSpeech", "", "Lines a hero can speak, for Player:say", CreateHeroSpeechEnum(lua));
 	return table;
 }
 

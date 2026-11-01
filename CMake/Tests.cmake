@@ -57,6 +57,8 @@ set(tests
   visual_store_test
   stash_test
   inventory_ui_test
+  lua_inventory_api_test
+  lua_inventory_events_test
   lua_input_api_test
   spell_ui_test
   char_panel_test

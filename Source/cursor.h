@@ -15,7 +15,7 @@
 namespace devilution {
 
 extern int pcursmonst;
-extern int8_t pcursinvitem;
+extern DVL_API_FOR_TEST int8_t pcursinvitem;
 extern uint16_t pcursstashitem;
 extern int8_t pcursitem;
 
@@ -47,6 +47,9 @@ void CheckCursMove();
 void DrawSoftwareCursor(const Surface &out, Point position, int cursId);
 
 void DrawItem(const Item &item, const Surface &out, Point position, ClxSprite clx);
+
+/** Returns whether there is a sprite for the given inventory index. There are none outside of a game. */
+bool HasInvItemSprite(int cursId);
 
 /** Returns the sprite for the given inventory index. */
 ClxSprite GetInvItemSprite(int cursId);

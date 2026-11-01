@@ -1,5 +1,6 @@
 #include "lua/modules/player.hpp"
 
+#include <cstdlib>
 #include <optional>
 
 #include <sol/sol.hpp>
@@ -12,9 +13,47 @@
 #include "items.h"
 #include "lua/metadoc.hpp"
 #include "player.h"
+#include "sound_effect_enums.h"
 
 namespace devilution {
 namespace {
+
+/**
+ * @brief Turns a Lua value into an index below count.
+ * @return The index, or an empty optional for anything but a whole number in range.
+ */
+std::optional<int> ToIndex(const sol::object &value, int count)
+{
+	if (value.get_type() != sol::type::number)
+		return std::nullopt;
+
+	lua_State *state = value.lua_state();
+	value.push(state);
+	int isInteger = 0;
+	const lua_Integer index = lua_tointegerx(state, -1, &isInteger);
+	lua_pop(state, 1);
+
+	if (isInteger == 0 || index < 0 || index >= count)
+		return std::nullopt;
+	return static_cast<int>(index);
+}
+
+/**
+ * @brief The inventory methods take self as a plain value, as a call with '.' instead of ':' puts anything there.
+ * @return The player, or nullptr if self is not one.
+ */
+Player *ToPlayer(const sol::object &self)
+{
+	return self.is<Player>() ? self.as<Player *>() : nullptr;
+}
+
+/**
+ * @return The item, or nullptr if the value is not one.
+ */
+const Item *ToItem(const sol::object &value)
+{
+	return value.is<Item>() ? value.as<const Item *>() : nullptr;
+}
 
 void InitPlayerUserType(sol::state_view &lua)
 {
@@ -111,6 +150,67 @@ void InitPlayerUserType(sol::state_view &lua)
 	LuaSetDocReadonlyProperty(playerType, "maxMana", "number",
 	    "Maximum mana (readonly)",
 	    [](Player &player) { return player._pMaxMana.whole(); });
+	LuaSetDocFn(playerType, "getBodyItem", "(location: InvBodyLoc) -> Item|nil",
+	    "The item in a body slot, or nil if the slot is empty or doesn't exist. A live reference: invalid after any inventory change.",
+	    [](const sol::object &self, const sol::object &location) -> Item * {
+		    Player *player = ToPlayer(self);
+		    const std::optional<int> index = ToIndex(location, NUM_INVLOC);
+		    if (player == nullptr || !index.has_value() || player->InvBody[*index].isEmpty())
+			    return nullptr;
+		    return &player->InvBody[*index];
+	    });
+	LuaSetDocFn(playerType, "getInventoryItemAt", "(cell: integer) -> Item|nil",
+	    "The item covering an inventory cell (`row * InventoryColumns + column`, from 0), or nil if there is none or the cell doesn't exist. A live reference: invalid after any inventory change.",
+	    [](const sol::object &self, const sol::object &cell) -> Item * {
+		    Player *player = ToPlayer(self);
+		    const std::optional<int> index = ToIndex(cell, InventoryGridCells);
+		    if (player == nullptr || !index.has_value() || player->InvGrid[*index] == 0)
+			    return nullptr;
+		    return &player->InvList[std::abs(player->InvGrid[*index]) - 1];
+	    });
+	LuaSetDocFn(playerType, "getInventoryItemCells", "(cell: integer) -> integer[]|nil",
+	    "All cells of the item covering a cell, ascending, so the first is its top-left cell. Nil if there is no item or the cell doesn't exist.",
+	    [](const sol::object &self, const sol::object &cell, sol::this_state state) -> std::optional<sol::table> {
+		    const Player *player = ToPlayer(self);
+		    const std::optional<int> index = ToIndex(cell, InventoryGridCells);
+		    if (player == nullptr || !index.has_value() || player->InvGrid[*index] == 0)
+			    return std::nullopt;
+
+		    sol::table cells = sol::state_view(state).create_table();
+		    const int itemId = std::abs(player->InvGrid[*index]);
+		    int count = 0;
+		    for (int i = 0; i < InventoryGridCells; i++) {
+			    if (std::abs(player->InvGrid[i]) == itemId) {
+				    count++;
+				    cells[count] = i;
+			    }
+		    }
+		    return cells;
+	    });
+	LuaSetDocFn(playerType, "getItemLocation", "(item: Item) -> ItemEquipType|nil",
+	    "Where this player wears an item. Differs from `item.loc` for classes that hold some two-handed weapons in one hand.",
+	    [](const sol::object &self, const sol::object &item) -> std::optional<item_equip_type> {
+		    const Player *player = ToPlayer(self);
+		    const Item *itemPointer = ToItem(item);
+		    if (player == nullptr || itemPointer == nullptr)
+			    return std::nullopt;
+		    return player->GetItemLocation(*itemPointer);
+	    });
+	LuaSetDocFn(playerType, "canUseItem", "(item: Item) -> boolean",
+	    "Whether this player meets the item's requirements",
+	    [](const sol::object &self, const sol::object &item) -> bool {
+		    const Player *player = ToPlayer(self);
+		    const Item *itemPointer = ToItem(item);
+		    return player != nullptr && itemPointer != nullptr && player->CanUseItem(*itemPointer);
+	    });
+	LuaSetDocFn(playerType, "say", "(speech: HeroSpeech)",
+	    "Speak a line, unless it is already being spoken. Does nothing given anything but a HeroSpeech.",
+	    [](const sol::object &self, const sol::object &speech) {
+		    const Player *player = ToPlayer(self);
+		    const std::optional<int> index = ToIndex(speech, static_cast<int>(HeroSpeech::LAST) + 1);
+		    if (player != nullptr && index.has_value())
+			    player->SaySpecific(static_cast<HeroSpeech>(*index));
+	    });
 }
 } // namespace
 
@@ -128,6 +228,8 @@ sol::table LuaPlayerModule(sol::state_view &lua)
 	    [](int x, int y) {
 		    NetSendCmdLoc(MyPlayerId, true, CMD_WALKXY, Point { x, y });
 	    });
+	LuaSetDoc(table, "InventoryColumns", "integer", "Width of the inventory grid in cells", InventorySizeInSlots.width);
+	LuaSetDoc(table, "InventoryRows", "integer", "Height of the inventory grid in cells", InventorySizeInSlots.height);
 
 	return table;
 }
