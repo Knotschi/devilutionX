@@ -532,7 +532,7 @@ sol::table LuaItemModule(sol::state_view &lua)
 
 	LuaSetDocFn(table, "addItemDataFromTsv", "(path: string, baseMappingId: number)", AddItemDataFromTsv);
 	LuaSetDocFn(table, "addUniqueItemDataFromTsv", "(path: string, baseMappingId: number)", AddUniqueItemDataFromTsv);
-	LuaSetDoc(table, "InvBodyLoc", "", "Body slots, for Player:getBodyItem", sol::object(lua["InvBodyLoc"]));
+	LuaSetDoc(table, "InvBodyLoc", "", "Body slots, for Player:getBodyItem and Player:moveItems", sol::object(lua["InvBodyLoc"]));
 
 	// Expose enums through the module table
 	table["ItemIndex"] = lua["ItemIndex"];

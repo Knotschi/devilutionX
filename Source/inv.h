@@ -5,7 +5,10 @@
  */
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 #include "engine/palette.h"
 #include "engine/point.hpp"
@@ -186,6 +189,65 @@ bool AutoPlaceItemInBelt(Player &player, const Item &item, bool persistItem = fa
  * @brief Sort player inventory.
  */
 void ReorganizeInventory(Player &player);
+
+/**
+ * @brief A place an item can be: a body slot or the inventory grid.
+ */
+struct ItemLocation {
+	enum class Kind : uint8_t {
+		Body,
+		Cell,
+	};
+
+	Kind kind;
+	/** An inv_body_loc for Body. For Cell, any cell of the item as a source, the top-left cell as a target. */
+	int index;
+};
+
+struct ItemMove {
+	ItemLocation from;
+	ItemLocation to;
+};
+
+enum class MoveItemsError : uint8_t {
+	/** Not the local player, no game is running, a store is open, or a body slot is involved while the player can't change equipment. */
+	Busy,
+	/** No moves, too many moves, a location out of range, or a repeated source or target. */
+	Invalid,
+	/** A source holds no item. */
+	Missing,
+	/** A target is out of bounds, or overlaps an item that stays or another target. */
+	NoRoom,
+	/** The item can't go in that body slot, or the hands would end up in an illegal combination. */
+	CannotEquip,
+};
+
+constexpr size_t MaxItemMoves = 16;
+
+/**
+ * @brief Checks whether MoveItems would succeed, without changing anything.
+ * @param player The player whose items would move.
+ * @param moves The moves, seen as happening all at once.
+ * @return The reason the moves are rejected, or an empty optional if they are fine.
+ */
+std::optional<MoveItemsError> CheckMoveItems(const Player &player, std::span<const ItemMove> moves);
+
+/**
+ * @brief Moves items between body slots and inventory cells as one atomic step.
+ *
+ * A target may overlap the source of another move.
+ * Rejected moves leave everything untouched. Sends network messages for each change.
+ * @param player The player whose items will move.
+ * @param moves The moves, seen as happening all at once.
+ * @return The reason the moves were rejected, or an empty optional if they were done.
+ */
+std::optional<MoveItemsError> MoveItems(Player &player, std::span<const ItemMove> moves);
+
+/**
+ * @brief Checks whether two items are a legal pair of hands for this player's class.
+ * @note Ignores what the player is holding and the player's stats.
+ */
+bool CanWieldTogether(const Player &player, const Item &a, const Item &b);
 
 /**
  * @brief Calculate the maximum additional gold that may fit in the user's inventory

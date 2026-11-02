@@ -43,6 +43,11 @@ const auto BadItems = { "0", "'x'", "true", "nil", "{}", "print", "p", "" };
 /** A first argument a call with '.' instead of ':' can give, then the rest. */
 const auto WrongSelves = { "", "0", "'p', 0", "{}, 0", "nil, 0", "print, 0" };
 
+const auto MoveMethods = { "moveItems" };
+
+/** Equips what is in cell 0, given the tests below put a sword there. */
+#define GOOD_MOVE "{ from = { cell = 0 }, to = { body = items.InvBodyLoc.HandLeft } }"
+
 class LuaInventoryApiTest : public LuaUITest {
 protected:
 	void SetUp() override
@@ -60,6 +65,12 @@ protected:
 	static std::optional<T> Run(const std::string &code)
 	{
 		return EvalAs<T>(Prelude + code);
+	}
+
+	/** @brief Call a method taking a list of moves, with the two values it returns joined by a ':'. */
+	static std::optional<std::string> CallMoves(std::string_view method, std::string_view moves)
+	{
+		return Run<std::string>(StrCat("local ok, reason = p.", method, "(p, ", moves, ") return tostring(ok) .. ':' .. tostring(reason)"));
 	}
 };
 
@@ -279,6 +290,304 @@ TEST_F(LuaInventoryApiTest, CanUseItem_WrongSelf_ReturnsFalse)
 	}
 }
 
+TEST_F(LuaInventoryApiTest, CanWieldTogether_Warrior_SwordAndShieldButNotTwoSwords)
+{
+	PlaceAt(MakeSword(), 0);
+	PlaceAt(MakeSword(), 1);
+	PlaceAt(MakeShield(), 2);
+
+	EXPECT_EQ(Run<bool>("return p:canWieldTogether(p:getInventoryItemAt(0), p:getInventoryItemAt(2))"), true);
+	EXPECT_EQ(Run<bool>("return p:canWieldTogether(p:getInventoryItemAt(0), p:getInventoryItemAt(1))"), false);
+}
+
+TEST_F(LuaInventoryApiTest, CanWieldTogether_Bard_TwoSwords)
+{
+	Become(HeroClass::Bard);
+	PlaceAt(MakeSword(), 0);
+	PlaceAt(MakeSword(), 1);
+
+	EXPECT_EQ(Run<bool>("return p:canWieldTogether(p:getInventoryItemAt(0), p:getInventoryItemAt(1))"), true);
+}
+
+TEST_F(LuaInventoryApiTest, CanWieldTogether_BadItem_ReturnsFalse)
+{
+	PlaceAt(MakeSword(), 0);
+
+	EXPECT_EQ(Run<bool>("return p:canWieldTogether(p:getInventoryItemAt(0))"), false);
+	EXPECT_EQ(Run<bool>("return p:canWieldTogether()"), false);
+	for (const char *item : { "0", "'x'", "true", "nil", "{}", "print", "p" }) {
+		SCOPED_TRACE(item);
+		EXPECT_EQ(Run<bool>(StrCat("return p:canWieldTogether(p:getInventoryItemAt(0), ", item, ")")), false);
+		EXPECT_EQ(Run<bool>(StrCat("return p:canWieldTogether(", item, ", p:getInventoryItemAt(0))")), false);
+	}
+}
+
+TEST_F(LuaInventoryApiTest, CanWieldTogether_WrongSelf_ReturnsFalse)
+{
+	PlaceAt(MakeSword(), 0);
+	PlaceAt(MakeShield(), 1);
+
+	for (const char *self : { "0", "nil", "'p'", "p:getInventoryItemAt(0)" }) {
+		SCOPED_TRACE(self);
+		EXPECT_EQ(Run<bool>(StrCat("return p.canWieldTogether(", self, ", p:getInventoryItemAt(0), p:getInventoryItemAt(1))")), false);
+	}
+}
+
+TEST_F(LuaInventoryApiTest, MoveItems_CellToBody_Equips)
+{
+	Item sword = MakeSword();
+	sword._iSeed = 1234;
+	PlaceAt(sword, 0);
+
+	EXPECT_EQ(CallMoves("moveItems", "{ " GOOD_MOVE " }"), "true:nil");
+
+	EXPECT_EQ(MyPlayer->InvGrid[0], 0);
+	EXPECT_EQ(MyPlayer->_pNumInv, 0);
+	EXPECT_EQ(MyPlayer->InvBody[INVLOC_HAND_LEFT]._iSeed, 1234);
+}
+
+TEST_F(LuaInventoryApiTest, MoveItems_BodyToCell_Unequips)
+{
+	Item sword = MakeSword();
+	sword._iSeed = 1234;
+	MyPlayer->InvBody[INVLOC_HAND_RIGHT] = sword;
+
+	EXPECT_EQ(CallMoves("moveItems", "{ { from = { body = items.InvBodyLoc.HandRight }, to = { cell = 39 - 20 } } }"), "true:nil");
+
+	EXPECT_TRUE(MyPlayer->InvBody[INVLOC_HAND_RIGHT].isEmpty());
+	EXPECT_EQ(MyPlayer->_pNumInv, 1);
+	EXPECT_EQ(MyPlayer->InvList[0]._iSeed, 1234);
+	EXPECT_NE(MyPlayer->InvGrid[19], 0);
+	EXPECT_NE(MyPlayer->InvGrid[39], 0);
+}
+
+TEST_F(LuaInventoryApiTest, MoveItems_SwapsStaffForSword_InOneCall)
+{
+	Item staff = MakeStaff();
+	staff._iSeed = 1234;
+	MyPlayer->InvBody[INVLOC_HAND_LEFT] = staff;
+	Item sword = MakeSword();
+	sword._iSeed = 5678;
+	PlaceAt(sword, 0);
+
+	EXPECT_EQ(CallMoves("moveItems", R"lua({
+		{ from = { body = items.InvBodyLoc.HandLeft }, to = { cell = 0 } },
+		{ from = { cell = 10 }, to = { body = items.InvBodyLoc.HandLeft } },
+	})lua"),
+	    "true:nil");
+
+	EXPECT_EQ(MyPlayer->InvBody[INVLOC_HAND_LEFT]._iSeed, 5678);
+	EXPECT_EQ(MyPlayer->_pNumInv, 1);
+	EXPECT_EQ(MyPlayer->InvList[0]._iSeed, 1234);
+}
+
+TEST_F(LuaInventoryApiTest, MoveItems_ListOfTheMostMoves_IsAccepted)
+{
+	for (int i = 0; i < 16; i++)
+		PlaceAt(MakePotion(), i);
+
+	EXPECT_EQ(CallMoves("moveItems", R"lua((function()
+		local moves = {}
+		for i = 0, 15 do moves[i + 1] = { from = { cell = i }, to = { cell = i + 20 } } end
+		return moves
+	end)())lua"),
+	    "true:nil");
+
+	for (int i = 0; i < 16; i++) {
+		EXPECT_EQ(MyPlayer->InvGrid[i], 0);
+		EXPECT_NE(MyPlayer->InvGrid[i + 20], 0);
+	}
+}
+
+TEST_F(LuaInventoryApiTest, Moves_MissingSource_SaysMissing)
+{
+	for (const char *method : MoveMethods)
+		EXPECT_EQ(CallMoves(method, "{ { from = { cell = 5 }, to = { cell = 6 } } }"), "false:missing");
+}
+
+TEST_F(LuaInventoryApiTest, Moves_NoSpaceAtTarget_SaysNoRoom)
+{
+	PlaceAt(MakeStaff(), 0);
+
+	for (const char *method : MoveMethods)
+		EXPECT_EQ(CallMoves(method, "{ { from = { cell = 0 }, to = { cell = 9 } } }"), "false:noroom");
+}
+
+TEST_F(LuaInventoryApiTest, Moves_NotEquipment_SaysCannotEquip)
+{
+	PlaceAt(MakePotion(), 0);
+
+	for (const char *method : MoveMethods)
+		EXPECT_EQ(CallMoves(method, "{ " GOOD_MOVE " }"), "false:cannotequip");
+}
+
+TEST_F(LuaInventoryApiTest, Moves_WhileAttacking_SaysBusy)
+{
+	PlaceAt(MakeSword(), 0);
+	MyPlayer->_pmode = PM_ATTACK;
+
+	for (const char *method : MoveMethods)
+		EXPECT_EQ(CallMoves(method, "{ " GOOD_MOVE " }"), "false:busy");
+}
+
+TEST_F(LuaInventoryApiTest, Moves_RepeatedSource_SaysInvalid)
+{
+	PlaceAt(MakeSword(), 0);
+
+	for (const char *method : MoveMethods)
+		EXPECT_EQ(CallMoves(method, "{ { from = { cell = 0 }, to = { cell = 1 } }, { from = { cell = 0 }, to = { cell = 2 } } }"), "false:invalid");
+}
+
+TEST_F(LuaInventoryApiTest, Moves_Malformed_SaysInvalidAndChangesNothing)
+{
+	PlaceAt(MakeSword(), 0);
+	const auto gridBefore = std::to_array(MyPlayer->InvGrid);
+
+	const char *const malformed[] = {
+		// Not a list.
+		"nil",
+		"0",
+		"1.5",
+		"'x'",
+		"true",
+		"print",
+		"p",
+		"p:getInventoryItemAt(0)",
+		"coroutine.create(print)",
+		// A list that isn't a sequence: nothing of it may be applied.
+		"{}",
+		"{ [2] = " GOOD_MOVE " }",
+		"{ [0] = " GOOD_MOVE " }",
+		"{ [-1] = " GOOD_MOVE " }",
+		"{ [1.5] = " GOOD_MOVE " }",
+		"{ x = " GOOD_MOVE " }",
+		"{ [true] = " GOOD_MOVE " }",
+		"{ " GOOD_MOVE ", x = 1 }",
+		"{ " GOOD_MOVE ", [3] = { from = { cell = 5 }, to = { cell = 6 } } }",
+		"{ " GOOD_MOVE ", nil, { from = { cell = 5 }, to = { cell = 6 } } }",
+		// As many entries as the highest index, one of them not part of the list.
+		"{ [2] = " GOOD_MOVE ", x = 1 }",
+		"{ 5, " GOOD_MOVE " }",
+		// Entries that aren't moves.
+		"{ 5 }",
+		"{ 'x' }",
+		"{ true }",
+		"{ print }",
+		"{ p }",
+		"{ {} }",
+		"{ " GOOD_MOVE ", 5 }",
+		"{ { from = { cell = 0 } } }",
+		"{ { to = { body = 4 } } }",
+		"{ { from = 0, to = { body = 4 } } }",
+		"{ { from = { cell = 0 }, to = 4 } }",
+		"{ { from = p, to = { body = 4 } } }",
+		"{ { from = 'x', to = { body = 4 } } }",
+		// Locations that aren't locations.
+		"{ { from = {}, to = { body = 4 } } }",
+		"{ { from = { cell = 0 }, to = {} } }",
+		"{ { from = { cell = 0, body = 1 }, to = { body = 4 } } }",
+		"{ { from = { cell = 0 }, to = { cell = 1, body = 4 } } }",
+		"{ { from = { x = 0 }, to = { body = 4 } } }",
+		"{ { from = { cell = '0' }, to = { body = 4 } } }",
+		"{ { from = { cell = true }, to = { body = 4 } } }",
+		"{ { from = { cell = {} }, to = { body = 4 } } }",
+		"{ { from = { cell = print }, to = { body = 4 } } }",
+		"{ { from = { cell = 0.5 }, to = { body = 4 } } }",
+		"{ { from = { cell = 0 }, to = { body = 3.5 } } }",
+		"{ { from = { cell = -1 }, to = { body = 4 } } }",
+		"{ { from = { cell = 40 }, to = { body = 4 } } }",
+		"{ { from = { cell = 0 }, to = { cell = -1 } } }",
+		"{ { from = { cell = 0 }, to = { cell = 40 } } }",
+		"{ { from = { cell = 0 }, to = { body = -1 } } }",
+		"{ { from = { cell = 0 }, to = { body = 7 } } }",
+		"{ { from = { body = 7 }, to = { cell = 1 } } }",
+		"{ { from = { cell = 2^53 }, to = { body = 4 } } }",
+		"{ { from = { cell = 4294967296 }, to = { body = 4 } } }",
+		"{ { from = { cell = 0 }, to = { body = 4294967300 } } }",
+		"{ { from = { cell = 0/0 }, to = { body = 4 } } }",
+		"{ { from = { cell = 1/0 }, to = { body = 4 } } }",
+		"{ { from = { cell = 1e308 }, to = { body = 4 } } }",
+		// Longer than allowed.
+		R"lua((function()
+			local moves = {}
+			for i = 1, 17 do moves[i] = { from = { cell = i }, to = { cell = i + 20 } } end
+			return moves
+		end)())lua",
+		R"lua((function()
+			local moves = {}
+			for i = 1, 100000 do moves[i] = 0 end
+			return moves
+		end)())lua",
+		// Metamethods stay out of it: they neither run, nor stand in for fields.
+		"setmetatable({}, { __index = function() error('boom') end })",
+		"setmetatable({}, { __index = { " GOOD_MOVE " } })",
+		"setmetatable({}, { __len = function() return 1 end, __index = function() return " GOOD_MOVE " end })",
+		"{ setmetatable({}, { __index = function() error('boom') end }) }",
+		"{ setmetatable({}, { __index = " GOOD_MOVE " }) }",
+		"{ { from = setmetatable({}, { __index = function() error('boom') end }), to = { body = 4 } } }",
+		"{ { from = setmetatable({}, { __index = { cell = 0 } }), to = { body = 4 } } }",
+		"{ { from = { cell = 0 }, to = setmetatable({}, { __index = { body = 4 } }) } }",
+	};
+
+	for (const char *moves : malformed) {
+		for (const char *method : MoveMethods) {
+			SCOPED_TRACE(StrCat(method, " ", moves));
+			EXPECT_EQ(CallMoves(method, moves), "false:invalid");
+		}
+	}
+
+	EXPECT_EQ(std::to_array(MyPlayer->InvGrid), gridBefore);
+	EXPECT_EQ(MyPlayer->_pNumInv, 1);
+	EXPECT_TRUE(MyPlayer->InvBody[INVLOC_HAND_LEFT].isEmpty());
+}
+
+TEST_F(LuaInventoryApiTest, Moves_NoArgumentAtAll_SaysInvalid)
+{
+	for (const char *method : MoveMethods) {
+		SCOPED_TRACE(method);
+		EXPECT_EQ(Run<std::string>(StrCat("local ok, reason = p:", method, "() return tostring(ok) .. ':' .. tostring(reason)")), "false:invalid");
+	}
+}
+
+TEST_F(LuaInventoryApiTest, Moves_WrongSelf_SaysInvalid)
+{
+	PlaceAt(MakeSword(), 0);
+
+	for (const char *method : MoveMethods) {
+		for (const char *self : { "nil", "0", "'p'", "{}", "p:getInventoryItemAt(0)" }) {
+			SCOPED_TRACE(StrCat(method, " ", self));
+			EXPECT_EQ(Run<std::string>(StrCat("local ok, reason = p.", method, "(", self, ", { " GOOD_MOVE " }) return tostring(ok) .. ':' .. tostring(reason)")), "false:invalid");
+		}
+	}
+
+	EXPECT_TRUE(MyPlayer->InvBody[INVLOC_HAND_LEFT].isEmpty());
+}
+
+TEST_F(LuaInventoryApiTest, Moves_MetamethodsDoNotRun_OnAGoodList)
+{
+	PlaceAt(MakeSword(), 0);
+
+	EXPECT_EQ(CallMoves("moveItems", "setmetatable({ " GOOD_MOVE " }, { __len = function() error('boom') end, __pairs = function() error('boom') end })"), "true:nil");
+}
+
+TEST_F(LuaInventoryApiTest, Moves_WorkInsideACoroutine)
+{
+	PlaceAt(MakeShield(), 0);
+
+	EXPECT_EQ(Run<std::string>(R"lua(
+		local co = coroutine.wrap(function()
+			local cells = p:getInventoryItemCells(0)
+			coroutine.yield()
+			return #cells, p:moveItems({ { from = { cell = 0 }, to = { cell = 20 } } })
+		end)
+		co()
+		local count, ok, reason = co()
+		return count .. ':' .. tostring(ok) .. ':' .. tostring(reason)
+	)lua"),
+	    "4:true:nil");
+	EXPECT_NE(MyPlayer->InvGrid[20], 0);
+}
+
 TEST_F(LuaInventoryApiTest, InventorySize_IsExposed)
 {
 	EXPECT_EQ(Run<int>("return player.InventoryColumns"), 10);
@@ -399,10 +708,22 @@ TEST_F(LuaInventoryApiTest, ItemSize_SpritesNotLoaded_IsNil)
 	EXPECT_EQ(height, true);
 }
 
+TEST_F(LuaInventoryApiTest, Moves_SpritesNotLoaded_SaysBusy)
+{
+	PlaceAt(MakePotion(), 0);
+
+	FreeCursor();
+	const std::optional<std::string> move = CallMoves("moveItems", "{ { from = { cell = 0 }, to = { cell = 1 } } }");
+	InitCursor();
+
+	EXPECT_EQ(move, "false:busy");
+	EXPECT_NE(MyPlayer->InvGrid[0], 0);
+}
+
 TEST_F(LuaInventoryApiTest, EveryAddition_IsDocumented)
 {
-	for (const char *key : { "getBodyItem", "getInventoryItemAt", "getInventoryItemCells", "getItemLocation", "canUseItem",
-	         "say" }) {
+	for (const char *key : { "getBodyItem", "getInventoryItemAt", "getInventoryItemCells", "getItemLocation", "canUseItem", "canWieldTogether",
+	         "moveItems", "say" }) {
 		SCOPED_TRACE(key);
 		EXPECT_EQ(Run<bool>(StrCat("return #p.__doc_", key, " > 0 and #p.__sig_", key, " > 0")), true);
 	}
