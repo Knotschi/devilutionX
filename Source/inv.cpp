@@ -191,20 +191,18 @@ bool CanEquip(const Item &item)
 }
 
 /**
- * @brief A specialized version of 'CanEquip(int, Item&, int)' that specifically checks whether the item can be equipped
- * in one/both of the player's hands.
- * @param player The player whose inventory will be checked for compatibility with the item.
+ * @brief Checks whether the item may join the given hands, by kind of item only: it ignores the player's stats.
+ * @param player The player whose class decides what can be held together.
  * @param item The item to check.
- * @return 'True' if the player can currently equip the item in either one of his hands (i.e. the required hands are empty and
- * allow the item), and 'False' otherwise.
+ * @param leftHandItem What the left hand holds.
+ * @param rightHandItem What the right hand holds.
+ * @return 'True' if the item can be held along with those hands (i.e. the required hands are empty and allow the item), and
+ * 'False' otherwise.
  */
-bool CanWield(Player &player, const Item &item)
+bool CanWield(const Player &player, const Item &item, const Item &leftHandItem, const Item &rightHandItem)
 {
-	if (!CanEquip(item) || IsNoneOf(player.GetItemLocation(item), ILOC_ONEHAND, ILOC_TWOHAND))
+	if (IsNoneOf(player.GetItemLocation(item), ILOC_ONEHAND, ILOC_TWOHAND))
 		return false;
-
-	const Item &leftHandItem = player.InvBody[INVLOC_HAND_LEFT];
-	const Item &rightHandItem = player.InvBody[INVLOC_HAND_RIGHT];
 
 	if (leftHandItem.isEmpty() && rightHandItem.isEmpty()) {
 		return true;
@@ -237,6 +235,41 @@ bool CanWield(Player &player, const Item &item)
 }
 
 /**
+ * @brief Checks whether the item may go in the given body location, by kind of item only: it ignores the player's stats and
+ * whether the location is free.
+ * @param player The player whose class decides what can be held together.
+ * @param item The item to check.
+ * @param bodyLocation The location to check.
+ * @param leftHandItem What the left hand holds.
+ * @param rightHandItem What the right hand holds.
+ * @return 'True' if the location allows the item and 'False' otherwise.
+ */
+bool FitsBodyLocation(const Player &player, const Item &item, inv_body_loc bodyLocation, const Item &leftHandItem, const Item &rightHandItem)
+{
+	switch (bodyLocation) {
+	case INVLOC_AMULET:
+		return item._iLoc == ILOC_AMULET;
+
+	case INVLOC_CHEST:
+		return item._iLoc == ILOC_ARMOR;
+
+	case INVLOC_HAND_LEFT:
+	case INVLOC_HAND_RIGHT:
+		return CanWield(player, item, leftHandItem, rightHandItem);
+
+	case INVLOC_HEAD:
+		return item._iLoc == ILOC_HELM;
+
+	case INVLOC_RING_LEFT:
+	case INVLOC_RING_RIGHT:
+		return item._iLoc == ILOC_RING;
+
+	default:
+		return false;
+	}
+}
+
+/**
  * @brief Checks whether the specified item can be equipped in the desired body location on the player.
  * @param player The player whose inventory will be checked for compatibility with the item.
  * @param item The item to check.
@@ -250,27 +283,7 @@ bool CanEquip(Player &player, const Item &item, inv_body_loc bodyLocation)
 		return false;
 	}
 
-	switch (bodyLocation) {
-	case INVLOC_AMULET:
-		return item._iLoc == ILOC_AMULET;
-
-	case INVLOC_CHEST:
-		return item._iLoc == ILOC_ARMOR;
-
-	case INVLOC_HAND_LEFT:
-	case INVLOC_HAND_RIGHT:
-		return CanWield(player, item);
-
-	case INVLOC_HEAD:
-		return item._iLoc == ILOC_HELM;
-
-	case INVLOC_RING_LEFT:
-	case INVLOC_RING_RIGHT:
-		return item._iLoc == ILOC_RING;
-
-	default:
-		return false;
-	}
+	return FitsBodyLocation(player, item, bodyLocation, player.InvBody[INVLOC_HAND_LEFT], player.InvBody[INVLOC_HAND_RIGHT]);
 }
 
 void ChangeEquipment(Player &player, inv_body_loc bodyLocation, const Item &item, bool sendNetworkMessage)
@@ -1126,6 +1139,37 @@ int CreateGoldItemInInventorySlot(Player &player, int slotIndex, int value)
 	return value;
 }
 
+bool IsValidLocation(ItemLocation location)
+{
+	const int count = location.kind == ItemLocation::Kind::Body ? NUM_INVLOC : InventoryGridCells;
+	return location.index >= 0 && location.index < count;
+}
+
+/**
+ * @brief Gives every location a number of its own, whatever its kind.
+ */
+int GetLocationId(ItemLocation location)
+{
+	return location.kind == ItemLocation::Kind::Body ? location.index : NUM_INVLOC + location.index;
+}
+
+bool HasItemAt(const Player &player, ItemLocation location)
+{
+	if (location.kind == ItemLocation::Kind::Body)
+		return !player.InvBody[location.index].isEmpty();
+	return player.InvGrid[location.index] != 0;
+}
+
+/**
+ * @brief Finds the item at a source location of a move.
+ */
+const Item &GetItemAt(const Player &player, ItemLocation location)
+{
+	if (location.kind == ItemLocation::Kind::Body)
+		return player.InvBody[location.index];
+	return player.InvList[std::abs(player.InvGrid[location.index]) - 1];
+}
+
 } // namespace
 
 void InvDrawSlotBack(const Surface &out, Point targetPosition, Size size, item_quality itemQuality)
@@ -1446,6 +1490,133 @@ bool AutoPlaceItemInInventory(Player &player, const Item &item, bool sendNetwork
 	}
 
 	return false;
+}
+
+std::optional<MoveItemsError> CheckMoveItems(const Player &player, std::span<const ItemMove> moves)
+{
+	// Item sizes come from the sprites, which don't exist outside of a game.
+	if (&player != MyPlayer || IsPlayerInStore() || !HasInvItemSprite(CURSOR_FIRSTITEM))
+		return MoveItemsError::Busy;
+
+	if (moves.empty() || moves.size() > MaxItemMoves)
+		return MoveItemsError::Invalid;
+
+	bool touchesBody = false;
+	std::bitset<NUM_INVLOC + InventoryGridCells> sources;
+	std::bitset<NUM_INVLOC + InventoryGridCells> targets;
+	for (const ItemMove &move : moves) {
+		if (!IsValidLocation(move.from) || !IsValidLocation(move.to))
+			return MoveItemsError::Invalid;
+		if (sources.test(GetLocationId(move.from)) || targets.test(GetLocationId(move.to)))
+			return MoveItemsError::Invalid;
+		sources.set(GetLocationId(move.from));
+		targets.set(GetLocationId(move.to));
+		touchesBody = touchesBody || move.from.kind == ItemLocation::Kind::Body || move.to.kind == ItemLocation::Kind::Body;
+	}
+	if (touchesBody && player._pmode > PM_WALK_SIDEWAYS)
+		return MoveItemsError::Busy;
+
+	const Item noItem {};
+	std::array<const Item *, NUM_INVLOC> bodyItems;
+	for (size_t i = 0; i < bodyItems.size(); i++)
+		bodyItems[i] = &player.InvBody[i];
+
+	std::bitset<InventoryGridCells> movingItems;
+	for (const ItemMove &move : moves) {
+		if (!HasItemAt(player, move.from))
+			return MoveItemsError::Missing;
+		if (move.from.kind == ItemLocation::Kind::Body) {
+			bodyItems[move.from.index] = &noItem;
+			continue;
+		}
+		// Two moves can name different cells of the same item.
+		const int iv = std::abs(player.InvGrid[move.from.index]) - 1;
+		if (movingItems.test(iv))
+			return MoveItemsError::Invalid;
+		movingItems.set(iv);
+	}
+
+	std::bitset<InventoryGridCells> occupiedCells;
+	for (int cell = 0; cell < InventoryGridCells; cell++) {
+		if (player.InvGrid[cell] != 0 && !movingItems.test(std::abs(player.InvGrid[cell]) - 1))
+			occupiedCells.set(cell);
+	}
+
+	for (const ItemMove &move : moves) {
+		const Item &item = GetItemAt(player, move.from);
+		if (move.to.kind == ItemLocation::Kind::Body) {
+			if (!bodyItems[move.to.index]->isEmpty())
+				return MoveItemsError::NoRoom;
+			const auto bodyLocation = static_cast<inv_body_loc>(move.to.index);
+			if (!player.CanUseItem(item)
+			    || !FitsBodyLocation(player, item, bodyLocation, *bodyItems[INVLOC_HAND_LEFT], *bodyItems[INVLOC_HAND_RIGHT])
+			    || (bodyLocation == INVLOC_HAND_RIGHT && player.GetItemLocation(item) == ILOC_TWOHAND)) {
+				return MoveItemsError::CannotEquip;
+			}
+			bodyItems[move.to.index] = &item;
+			continue;
+		}
+
+		const Size size = GetInventorySize(item);
+		if (move.to.index % InventorySizeInSlots.width + size.width > InventorySizeInSlots.width
+		    || move.to.index / InventorySizeInSlots.width + size.height > InventorySizeInSlots.height) {
+			return MoveItemsError::NoRoom;
+		}
+		for (int y = 0; y < size.height; y++) {
+			for (int x = 0; x < size.width; x++) {
+				const int cell = move.to.index + (y * InventorySizeInSlots.width) + x;
+				if (occupiedCells.test(cell))
+					return MoveItemsError::NoRoom;
+				occupiedCells.set(cell);
+			}
+		}
+	}
+
+	return std::nullopt;
+}
+
+std::optional<MoveItemsError> MoveItems(Player &player, std::span<const ItemMove> moves)
+{
+	if (const std::optional<MoveItemsError> error = CheckMoveItems(player, moves))
+		return error;
+
+	// InvList indices are about to change.
+	CloseGoldDrop();
+
+	std::array<Item, MaxItemMoves> items;
+	for (size_t i = 0; i < moves.size(); i++)
+		items[i] = GetItemAt(player, moves[i].from);
+
+	for (const ItemMove &move : moves) {
+		if (move.from.kind == ItemLocation::Kind::Body)
+			RemoveEquipment(player, static_cast<inv_body_loc>(move.from.index), false);
+	}
+	// Removing an item shifts the InvList indices of later items, but no item changes cells.
+	for (const ItemMove &move : moves) {
+		if (move.from.kind == ItemLocation::Kind::Cell)
+			player.RemoveInvItem(std::abs(player.InvGrid[move.from.index]) - 1, false);
+	}
+
+	for (size_t i = 0; i < moves.size(); i++) {
+		if (moves[i].to.kind != ItemLocation::Kind::Cell)
+			continue;
+		player.InvList[player._pNumInv] = items[i];
+		player._pNumInv++;
+		AddItemToInvGrid(player, moves[i].to.index, player._pNumInv, GetInventorySize(items[i]), true);
+	}
+	for (size_t i = 0; i < moves.size(); i++) {
+		if (moves[i].to.kind == ItemLocation::Kind::Body)
+			ChangeEquipment(player, static_cast<inv_body_loc>(moves[i].to.index), items[i], true);
+	}
+
+	CalcPlrInv(player, true);
+
+	return std::nullopt;
+}
+
+bool CanWieldTogether(const Player &player, const Item &a, const Item &b)
+{
+	return !b.isEmpty() && CanWield(player, a, b, {});
 }
 
 std::vector<int> SortItemsBySize(Player &player)
