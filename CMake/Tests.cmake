@@ -58,6 +58,7 @@ set(tests
   stash_test
   inventory_ui_test
   move_items_test
+  weapon_swap_logic_test
   lua_inventory_api_test
   lua_inventory_events_test
   lua_input_api_test
