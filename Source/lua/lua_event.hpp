@@ -30,6 +30,8 @@ void GameStart();
  * @return Whether a handler took the click, so the game has to ignore it.
  */
 bool InventoryCellClicked(int cell);
+/** @brief Offers the top-left cell the game picked for an item being acquired. Returns whether a mod refused it. */
+bool InventoryPlacementRefused(int cell, int width, int height);
 void InventoryDrawBackground();
 void InventoryDrawComplete();
 

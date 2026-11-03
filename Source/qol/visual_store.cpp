@@ -715,6 +715,11 @@ void CheckVisualStorePaste(Point mousePosition)
 	// Calculate sell price
 	int sellPrice = GetSellPrice(player.HoldItem);
 
+	if (sellPrice > RoomForGold()) {
+		player.SaySpecific(HeroSpeech::ICantCarryAnymore);
+		return;
+	}
+
 	// Add gold to player
 	AddGoldToInventory(player, sellPrice);
 	PlaySFX(SfxID::ItemGold);
@@ -760,12 +765,17 @@ void SellItemToVisualStore(int invIndex)
 	// Calculate sell price
 	int sellPrice = GetSellPrice(item);
 
+	if (sellPrice > RoomForGold(invIndex)) {
+		player.SaySpecific(HeroSpeech::ICantCarryAnymore);
+		return;
+	}
+
+	// Remove item from inventory, its cells can be where the gold goes
+	player.RemoveInvItem(invIndex);
+
 	// Add gold to player
 	AddGoldToInventory(player, sellPrice);
 	PlaySFX(SfxID::ItemGold);
-
-	// Remove item from inventory
-	player.RemoveInvItem(invIndex);
 }
 
 void CheckVisualStoreButtonPress(Point mousePosition)

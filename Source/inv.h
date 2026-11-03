@@ -173,6 +173,15 @@ bool CanFitItemInInventory(const Player &player, const Item &item);
 bool AutoPlaceItemInInventory(Player &player, const Item &item, bool sendNetworkMessage = false);
 
 /**
+ * @brief As CanFitItemInInventory, for an item the player is getting from the world (a pickup or a purchase).
+ * Lua mods can refuse slots for the local player, see the InventoryPlacementCheck event.
+ */
+bool CanFitAcquiredItemInInventory(const Player &player, const Item &item);
+
+/** @brief As AutoPlaceItemInInventory, for an item the player is getting from the world. See CanFitAcquiredItemInInventory. */
+bool AutoPlaceAcquiredItemInInventory(Player &player, const Item &item, bool sendNetworkMessage = false);
+
+/**
  * @brief Checks whether the given item can be placed on the specified player's belt. Returns 'True' when the item can be placed
  * on belt slots and the player has at least one empty slot in his belt.
  * If 'persistItem' is 'True', the item is also placed in the belt.
@@ -252,7 +261,7 @@ bool CanWieldTogether(const Player &player, const Item &a, const Item &b);
 /**
  * @brief Calculate the maximum additional gold that may fit in the user's inventory
  */
-int RoomForGold();
+int RoomForGold(int itemIndexToIgnore = -1);
 
 /**
  * @return The leftover amount that didn't fit, if any

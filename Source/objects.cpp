@@ -34,6 +34,7 @@
 #include "levels/themes.h"
 #include "levels/tile_properties.hpp"
 #include "lighting.h"
+#include "lua/lua_event.hpp"
 #include "minitext.h"
 #include "missiles.h"
 #include "monster.h"
@@ -2673,8 +2674,9 @@ void OperateShrineSpiritual(DiabloGenerator &rng, Player &player)
 	if (&player != MyPlayer)
 		return;
 
-	for (int8_t &itemIndex : player.InvGrid) {
-		if (itemIndex == 0) {
+	for (int cell = 0; cell < InventoryGridCells; cell++) {
+		int8_t &itemIndex = player.InvGrid[cell];
+		if (itemIndex == 0 && !lua::InventoryPlacementRefused(cell, 1, 1)) {
 			Item &goldItem = player.InvList[player._pNumInv];
 			MakeGoldStack(goldItem, (5 * leveltype) + rng.generateRnd(10 * leveltype));
 			player._pNumInv++;

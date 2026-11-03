@@ -76,6 +76,11 @@ local events = {
   InventoryCellClicked = CreateEvent({ stopOnTruthy = true }),
   __doc_InventoryCellClicked = "Called when a cell of the inventory grid is clicked, before the game handles the click. Passes the cell as argument. A handler that returns true takes the click: the game ignores it and later handlers are not called. A handler that changes the inventory has to take the click.",
 
+  ---Called when the game has found a free spot for an item the player gets by a pickup or a purchase, or considers a cell for gold (width and height 1). Passes the top-left cell, and the item's width and height in cells.
+  ---A handler that returns true refuses the spot, and the game tries its next choice. Not called for items moved within the player's own gear.
+  InventoryPlacementCheck = CreateEvent({ stopOnTruthy = true }),
+  __doc_InventoryPlacementCheck = "Called when the game has found a free spot for an item the player gets by a pickup or a purchase, or considers a cell for gold (width and height 1). Passes the top-left cell, and the item's width and height in cells. A handler that returns true refuses the spot, and the game tries its next choice. Not called for items moved within the player's own gear.",
+
   ---Called after the art of the inventory panel has been drawn, before slot backgrounds and items, so what a handler draws ends up below them. Not called while inspecting another player.
   InventoryDrawBackground = CreateEvent(),
   __doc_InventoryDrawBackground = "Called after the art of the inventory panel has been drawn, before slot backgrounds and items, so what a handler draws ends up below them. Not called while inspecting another player.",

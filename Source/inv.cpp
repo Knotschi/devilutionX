@@ -698,18 +698,24 @@ bool CheckItemFitsInInventorySlot(const Player &player, int slotIndex, const Siz
  * @param player Player whose inventory will be checked.
  * @param itemSize Dimensions of the item.
  * @param itemIndexToIgnore Can be used if you want to find whether the new item would fit with this item removed, without performing unnecessary actions.
+ * @param acquiring The item is new to the player, so mods get to refuse slots of the local player.
  * @return The first slot that could fit the item or an empty optional.
  */
-std::optional<int> FindSlotForItem(const Player &player, const Size &itemSize, int itemIndexToIgnore = -1)
+std::optional<int> FindSlotForItem(const Player &player, const Size &itemSize, int itemIndexToIgnore = -1, bool acquiring = false)
 {
+	const auto fits = [&](int slot) {
+		return CheckItemFitsInInventorySlot(player, slot, itemSize, itemIndexToIgnore)
+		    && !(acquiring && &player == MyPlayer && lua::InventoryPlacementRefused(slot, itemSize.width, itemSize.height));
+	};
+
 	if (itemSize.height == 1) {
 		for (int i = 30; i <= 39; i++) {
-			if (CheckItemFitsInInventorySlot(player, i, itemSize, itemIndexToIgnore))
+			if (fits(i))
 				return i;
 		}
 		for (int x = 9; x >= 0; x--) {
 			for (int y = 2; y >= 0; y--) {
-				if (CheckItemFitsInInventorySlot(player, (10 * y) + x, itemSize, itemIndexToIgnore))
+				if (fits((10 * y) + x))
 					return (10 * y) + x;
 			}
 		}
@@ -719,7 +725,7 @@ std::optional<int> FindSlotForItem(const Player &player, const Size &itemSize, i
 	if (itemSize.height == 2) {
 		for (int x = 10 - itemSize.width; x >= 0; x--) {
 			for (int y = 0; y < 3; y++) {
-				if (CheckItemFitsInInventorySlot(player, (10 * y) + x, itemSize, itemIndexToIgnore))
+				if (fits((10 * y) + x))
 					return (10 * y) + x;
 			}
 		}
@@ -728,7 +734,7 @@ std::optional<int> FindSlotForItem(const Player &player, const Size &itemSize, i
 
 	if (itemSize == Size { 1, 3 }) {
 		for (int i = 0; i < 20; i++) {
-			if (CheckItemFitsInInventorySlot(player, i, itemSize, itemIndexToIgnore))
+			if (fits(i))
 				return i;
 		}
 		return {};
@@ -736,12 +742,12 @@ std::optional<int> FindSlotForItem(const Player &player, const Size &itemSize, i
 
 	if (itemSize == Size { 2, 3 }) {
 		for (int i = 0; i < 9; i++) {
-			if (CheckItemFitsInInventorySlot(player, i, itemSize, itemIndexToIgnore))
+			if (fits(i))
 				return i;
 		}
 
 		for (int i = 10; i < 19; i++) {
-			if (CheckItemFitsInInventorySlot(player, i, itemSize, itemIndexToIgnore))
+			if (fits(i))
 				return i;
 		}
 		return {};
@@ -1120,9 +1126,14 @@ void StartGoldDrop()
 	OpenGoldDrop(invIndex, max);
 }
 
+bool GoldCellRefused(const Player &player, int cell)
+{
+	return &player == MyPlayer && lua::InventoryPlacementRefused(cell, 1, 1);
+}
+
 int CreateGoldItemInInventorySlot(Player &player, int slotIndex, int value)
 {
-	if (player.InvGrid[slotIndex] != 0) {
+	if (player.InvGrid[slotIndex] != 0 || GoldCellRefused(player, slotIndex)) {
 		return value;
 	}
 
@@ -1474,10 +1485,17 @@ bool CanFitItemInInventory(const Player &player, const Item &item)
 	return static_cast<bool>(FindSlotForItem(player, GetInventorySize(item)));
 }
 
-bool AutoPlaceItemInInventory(Player &player, const Item &item, bool sendNetworkMessage)
+bool CanFitAcquiredItemInInventory(const Player &player, const Item &item)
+{
+	return static_cast<bool>(FindSlotForItem(player, GetInventorySize(item), -1, true));
+}
+
+namespace {
+
+bool PlaceItemInInventory(Player &player, const Item &item, bool sendNetworkMessage, bool acquiring)
 {
 	const Size itemSize = GetInventorySize(item);
-	std::optional<int> targetSlot = FindSlotForItem(player, itemSize);
+	std::optional<int> targetSlot = FindSlotForItem(player, itemSize, -1, acquiring);
 
 	if (targetSlot) {
 		player.InvList[player._pNumInv] = item;
@@ -1490,6 +1508,18 @@ bool AutoPlaceItemInInventory(Player &player, const Item &item, bool sendNetwork
 	}
 
 	return false;
+}
+
+} // namespace
+
+bool AutoPlaceItemInInventory(Player &player, const Item &item, bool sendNetworkMessage)
+{
+	return PlaceItemInInventory(player, item, sendNetworkMessage, false);
+}
+
+bool AutoPlaceAcquiredItemInInventory(Player &player, const Item &item, bool sendNetworkMessage)
+{
+	return PlaceItemInInventory(player, item, sendNetworkMessage, true);
 }
 
 std::optional<MoveItemsError> CheckMoveItems(const Player &player, std::span<const ItemMove> moves)
@@ -1685,15 +1715,18 @@ void ReorganizeInventory(Player &player)
 	}
 }
 
-int RoomForGold()
+int RoomForGold(int itemIndexToIgnore)
 {
 	int amount = 0;
-	for (const int8_t &itemIndex : MyPlayer->InvGrid) {
-		if (itemIndex < 0) {
+	for (int cell = 0; cell < InventoryGridCells; cell++) {
+		const int8_t itemIndex = MyPlayer->InvGrid[cell];
+		if (itemIndex == 0 || std::abs(itemIndex) - 1 == itemIndexToIgnore) {
+			if (!GoldCellRefused(*MyPlayer, cell)) {
+				amount += MaxGold;
+			}
 			continue;
 		}
-		if (itemIndex == 0) {
-			amount += MaxGold;
+		if (itemIndex < 0) {
 			continue;
 		}
 
@@ -1974,7 +2007,7 @@ void AutoGetItem(Player &player, Item *itemPointer, int ii)
 			done = AutoPlaceItemInBelt(player, item, true, &player == MyPlayer);
 		}
 		if (!done) {
-			done = AutoPlaceItemInInventory(player, item, &player == MyPlayer);
+			done = AutoPlaceAcquiredItemInInventory(player, item, &player == MyPlayer);
 		}
 	}
 

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "inv.h"
 #include "inv_iterators.hpp"
 #include "options.h"
 #include "player.h"
@@ -14,26 +15,6 @@
 
 namespace devilution {
 namespace {
-
-bool HasRoomForGold()
-{
-	for (const int idx : MyPlayer->InvGrid) {
-		// Secondary item cell. No need to check those as we'll go through the main item cells anyway.
-		if (idx < 0)
-			continue;
-
-		// Empty cell. 1x1 space available.
-		if (idx == 0)
-			return true;
-
-		// Main item cell. Potentially a gold pile so check it.
-		auto item = MyPlayer->InvList[idx - 1];
-		if (item._itype == ItemType::Gold && item._ivalue < MaxGold)
-			return true;
-	}
-
-	return false;
-}
 
 int NumMiscItemsInInv(int iMiscId)
 {
@@ -43,11 +24,11 @@ int NumMiscItemsInInv(int iMiscId)
 
 bool DoPickup(Item item)
 {
-	if (item._itype == ItemType::Gold && *GetOptions().Gameplay.autoGoldPickup && HasRoomForGold())
+	if (item._itype == ItemType::Gold && *GetOptions().Gameplay.autoGoldPickup && RoomForGold() > 0)
 		return true;
 
 	if (item._itype == ItemType::Misc
-	    && (CanFitItemInInventory(*MyPlayer, item) || AutoPlaceItemInBelt(*MyPlayer, item))) {
+	    && (CanFitAcquiredItemInInventory(*MyPlayer, item) || AutoPlaceItemInBelt(*MyPlayer, item))) {
 		switch (item._iMiscId) {
 		case IMISC_HEAL:
 			return *GetOptions().Gameplay.numHealPotionPickup > NumMiscItemsInInv(item._iMiscId);

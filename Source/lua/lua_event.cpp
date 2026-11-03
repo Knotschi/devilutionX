@@ -104,6 +104,10 @@ bool InventoryCellClicked(int cell)
 {
 	return CallLuaEventReturn<bool>(false, "InventoryCellClicked", cell);
 }
+bool InventoryPlacementRefused(int cell, int width, int height)
+{
+	return CallLuaEventReturn<bool>(false, "InventoryPlacementCheck", cell, width, height);
+}
 void InventoryDrawBackground()
 {
 	CallLuaEvent("InventoryDrawBackground");

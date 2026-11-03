@@ -184,6 +184,53 @@ protected:
 	}
 };
 
+TEST_F(LuaInventoryEventsTest, PlacementCheck_RefusedSpot_GameTriesNext)
+{
+	ASSERT_TRUE(Eval("on('InventoryPlacementCheck', function(cell, w, h) return cell == 30 and w == 1 and h == 1 end)").valid());
+
+	EXPECT_TRUE(AutoPlaceAcquiredItemInInventory(*MyPlayer, MakePotion()));
+
+	EXPECT_EQ(MyPlayer->InvGrid[30], 0);
+	EXPECT_NE(MyPlayer->InvGrid[31], 0);
+}
+
+TEST_F(LuaInventoryEventsTest, PlacementCheck_AllRefused_ItemDoesNotFit)
+{
+	ASSERT_TRUE(Eval("on('InventoryPlacementCheck', function() return true end)").valid());
+
+	EXPECT_FALSE(CanFitAcquiredItemInInventory(*MyPlayer, MakePotion()));
+	EXPECT_FALSE(AutoPlaceAcquiredItemInInventory(*MyPlayer, MakePotion()));
+	EXPECT_EQ(MyPlayer->_pNumInv, 0);
+}
+
+TEST_F(LuaInventoryEventsTest, PlacementCheck_NotAskedForOwnGear)
+{
+	ASSERT_TRUE(Eval("on('InventoryPlacementCheck', function() return true end)").valid());
+
+	EXPECT_TRUE(AutoPlaceItemInInventory(*MyPlayer, MakePotion()));
+	EXPECT_NE(MyPlayer->InvGrid[30], 0);
+}
+
+TEST_F(LuaInventoryEventsTest, PlacementCheck_Gold_SkipsRefusedCells)
+{
+	ASSERT_TRUE(Eval("on('InventoryPlacementCheck', function(cell, w, h) return cell == 39 and w == 1 and h == 1 end)").valid());
+
+	EXPECT_EQ(RoomForGold(), 39 * MaxGold);
+	EXPECT_EQ(AddGoldToInventory(*MyPlayer, 10), 0);
+
+	EXPECT_EQ(MyPlayer->InvGrid[39], 0);
+	EXPECT_NE(MyPlayer->InvGrid[38], 0);
+}
+
+TEST_F(LuaInventoryEventsTest, PlacementCheck_Gold_SoldItemCountsOnlyWhereAllowed)
+{
+	PlaceAt(MakeSword(), 0); // Cells 0, 10 and 20.
+	ASSERT_TRUE(Eval("on('InventoryPlacementCheck', function(cell) return cell == 0 end)").valid());
+
+	EXPECT_EQ(RoomForGold(), 37 * MaxGold);
+	EXPECT_EQ(RoomForGold(0), 39 * MaxGold);
+}
+
 TEST_F(LuaInventoryEventsTest, Click_FiresWithCell)
 {
 	ASSERT_TRUE(Eval("on('InventoryCellClicked', recordClick)").valid());

@@ -1411,18 +1411,9 @@ void SmithPremiumBuyEnter()
 	StartStore(TalkID::Confirm);
 }
 
-bool StoreGoldFit(Item &item)
+bool StoreGoldFit(int idx)
 {
-	const int cost = item._iIvalue;
-
-	const Size itemSize = GetInventorySize(item);
-	const int itemRoomForGold = itemSize.width * itemSize.height * MaxGold;
-
-	if (cost <= itemRoomForGold) {
-		return true;
-	}
-
-	return cost <= itemRoomForGold + RoomForGold();
+	return PlayerItems[idx]._iIvalue <= RoomForGold(PlayerItemIndexes[idx]);
 }
 
 /**
@@ -1467,7 +1458,7 @@ void SmithSellEnter()
 
 	const int idx = ScrollPos + ((CurrentTextLine - PreviousScrollPos) / 4);
 
-	if (!StoreGoldFit(PlayerItems[idx])) {
+	if (!StoreGoldFit(idx)) {
 		StartStore(TalkID::NoRoom);
 		return;
 	}
@@ -1636,7 +1627,7 @@ void WitchSellEnter()
 
 	const int idx = ScrollPos + ((CurrentTextLine - PreviousScrollPos) / 4);
 
-	if (!StoreGoldFit(PlayerItems[idx])) {
+	if (!StoreGoldFit(idx)) {
 		StartStore(TalkID::NoRoom);
 		return;
 	}
@@ -2112,10 +2103,10 @@ bool StoreAutoPlace(Item &item, bool persistItem)
 	}
 
 	if (persistItem) {
-		return AutoPlaceItemInInventory(player, item, true);
+		return AutoPlaceAcquiredItemInInventory(player, item, true);
 	}
 
-	return CanFitItemInInventory(player, item);
+	return CanFitAcquiredItemInInventory(player, item);
 }
 
 void AddStoreHoldRepair(Item *itm, int8_t i)
